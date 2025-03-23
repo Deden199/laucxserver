@@ -20,7 +20,7 @@ app.use((req, res, next) => {
     next();
 });
 
-const allowedOrigins = ['https://launcx.com', 'http://localhost:3000', 'https://www.launcx.com', 'https://qris.link', 'https://www.qris.link', `${config.api.swaggerUrl}`];
+const allowedOrigins = ['https://launcx.com', 'http://localhost:3000', 'https://www.launcx.com', 'https://qris.link', 'https://www.qris.link', 'https://laucnxfrontend.vercel.app',`${config.api.swaggerUrl}`];
 // CORS options to allow specific origins
 const corsOptions: cors.CorsOptions = {
     origin: function (origin, callback) {
