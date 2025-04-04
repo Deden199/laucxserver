@@ -80,7 +80,7 @@ paymentRouter.post('/transaction/callback', paymentController.transactionCallbac
  *       - in: path
  *         name: merchantId
  *         required: true
- *         description: The merchant's phone number or identifier.
+ *         description: The merchant's phone number or identifier. Use "gv" or "gudangvoucher" untuk menggunakan alur GudangVoucher.
  *         schema:
  *           type: string
  *       - in: path
@@ -133,7 +133,7 @@ paymentRouter.get('/payment/:merchantId/:amount', paymentController.createTransa
  * /payments/status/{referenceId}:
  *   get:
  *     summary: Check the payment status
- *     description: Retrieves the status of a payment transaction using the reference ID, returns the current status
+ *     description: Retrieves the status of a payment transaction using the reference ID, returns the current status.
  *     tags:
  *       - V1 Payment
  *     operationId: checkPaymentStatus

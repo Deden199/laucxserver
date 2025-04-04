@@ -33,6 +33,12 @@ export const config = {
       botToken: process.env.TELEGRAM_BOT_TOKEN,
       adminChannel: process.env.TELEGRAM_ADMIN_CHANNEL,
     },
+    gudangvoucher: {
+      qrisUrl: process.env.GV_QRIS_URL || 'https://devopenapi.gudangvoucher.com/v3/transaction/request/qris',
+      storeUrl: process.env.GV_STORE_URL || 'https://devopenapi.gudangvoucher.com/v3/transaction/request/store',
+      merchantId: process.env.GV_MERCHANT_ID || '',
+      merchantKey: process.env.GV_MERCHANT_KEY || '',
+    },
   },
   aws: {
     region: process.env.AWS_REGION || 'ap-southeast-1',
@@ -46,7 +52,7 @@ export const config = {
     connection_string: process.env.DATABASE_URL || '',
   },
   node_env: process.env.NODE_ENV || 'development',
-  mockEnabled : process.env.MOCK_ENABLED || false,
+  mockEnabled: process.env.MOCK_ENABLED || false,
 };
 
 export const swaggerConfig = {

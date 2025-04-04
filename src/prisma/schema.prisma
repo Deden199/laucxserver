@@ -19,77 +19,79 @@ datasource db {
 }
 
 model merchant {
-  id                  String     @id @default(auto()) @map("_id") @db.ObjectId
-  phoneNumber         String
-  name                String
-  email               String?
-  telegram            String?
-  mdr                 Float
-  createdAt           DateTime @default(now())
-  subMerchants        sub_merchant[] @relation("MerchantSubMerchants")
-  transactionRequests transaction_request[] @relation("MerchantTransactionRequests")
-  disbursements       disbursement[] @relation("MerchantDisbursements")
+  id                   String                @id @default(auto()) @map("_id") @db.ObjectId
+  phoneNumber          String
+  name                 String
+  email                String?
+  telegram             String?
+  mdr                  Float
+  createdAt            DateTime              @default(now())
+  subMerchants         sub_merchant[]        @relation("MerchantSubMerchants")
+  transactionRequests  transaction_request[] @relation("MerchantTransactionRequests")
+  disbursements        disbursement[]        @relation("MerchantDisbursements")
   disbursement_accounts disbursement_account[] @relation("MerchantDisbursementAccount")
 }
 
 model sub_merchant {
-  id              String    @id @default(auto()) @map("_id") @db.ObjectId
-  merchantId      String    @db.ObjectId
-  netzMerchantId  String
-  netzPartnerId   String
-  merchant        merchant @relation("MerchantSubMerchants", fields: [merchantId], references: [id])
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  merchantId     String    @db.ObjectId
+  netzMerchantId String
+  netzPartnerId  String
+  merchant       merchant  @relation("MerchantSubMerchants", fields: [merchantId], references: [id])
 }
 
-
 model transaction_request {
-  id                String     @id @default(auto()) @map("_id") @db.ObjectId
-  merchantId        String     @db.ObjectId
-  subMerchantId     String
-  buyerId           String
-  amount            Int
-  status            String
-  createdAt         DateTime   @default(now())
-  settlementAmount  Int?
-  settlementAt      DateTime?
-  merchant          merchant   @relation("MerchantTransactionRequests", fields: [merchantId], references: [id])
+  id               String     @id @default(auto()) @map("_id") @db.ObjectId
+  merchantId       String     @db.ObjectId
+  subMerchantId    String
+  buyerId          String
+  amount           Int
+  status           String
+  createdAt        DateTime   @default(now())
+  settlementAmount Int?
+  settlementAt     DateTime?
+  // Field tambahan untuk menandai provider pembayaran
+  paymentProvider  String?
+  // Field untuk menyimpan custom reference dari gateway (misalnya, untuk GudangVoucher)
+  gatewayCustom    String?
+  merchant         merchant   @relation("MerchantTransactionRequests", fields: [merchantId], references: [id])
 }
 
 model transaction_response {
-  id             String      @id @default(auto()) @map("_id") @db.ObjectId
-  referenceId    String      @db.ObjectId
-  responseBody   Json
-  createdAt      DateTime @default(now())
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  referenceId   String   @db.ObjectId
+  responseBody  Json
+  createdAt     DateTime @default(now())
 }
 
 model transaction_callback {
-  id             String      @id @default(auto()) @map("_id") @db.ObjectId
-  referenceId    String?      @db.ObjectId
-  requestBody    Json
-  createdAt      DateTime @default(now())
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  referenceId   String?  @db.ObjectId
+  requestBody   Json
+  createdAt     DateTime @default(now())
 }
 
 model disbursement_callback {
-  id             String      @id @default(auto()) @map("_id") @db.ObjectId
-  referenceId    String?      @db.ObjectId
-  requestBody    Json
-  createdAt      DateTime @default(now())
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  referenceId   String?  @db.ObjectId
+  requestBody   Json
+  createdAt     DateTime @default(now())
 }
 
 model disbursement {
-  id               String            @id @default(auto()) @map("_id") @db.ObjectId
-  merchantId       String            @db.ObjectId
-  amount           BigInt            @map("amount")
-  createdAt        DateTime          @map("createdAt")
-  beneficiary      Beneficiary
-  totalAmount      BigInt            @map("totalAmount")
-  transferFee      BigInt            @map("transferFee")
-  status           DisbursementStatus  // Updated to use WithdrawalStatus enum
-  merchant         merchant          @relation("MerchantDisbursements", fields: [merchantId], references: [id]) // Relation to merchant
+  id            String            @id @default(auto()) @map("_id") @db.ObjectId
+  merchantId    String            @db.ObjectId
+  amount        BigInt            @map("amount")
+  createdAt     DateTime          @map("createdAt")
+  beneficiary   Beneficiary
+  totalAmount   BigInt            @map("totalAmount")
+  transferFee   BigInt            @map("transferFee")
+  status        DisbursementStatus
+  merchant      merchant          @relation("MerchantDisbursements", fields: [merchantId], references: [id])
 
-  @@map("disbursement") // Maps the model to the `withdrawal` collection in MongoDB
+  @@map("disbursement")
 }
 
-// Embedded model for beneficiary information (MongoDB supports embedded documents)
 type Beneficiary {
   accountName   String
   accountNumber String
@@ -97,10 +99,10 @@ type Beneficiary {
 }
 
 model settlement {
-  id                  String              @id @default(auto()) @map("_id") @db.ObjectId
-  transactionId       String              @db.ObjectId
-  settlementTime      DateTime
-  settlementObj       Json
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  transactionId  String   @db.ObjectId
+  settlementTime DateTime
+  settlementObj  Json
 
   @@map("settlement")
 }
@@ -111,9 +113,7 @@ model disbursement_account {
   accountNo   String
   bankCode    String
   accountName String
-  merchant    merchant  @relation("MerchantDisbursementAccount", fields: [merchantId], references: [id]) // Relation to merchant
+  merchant    merchant  @relation("MerchantDisbursementAccount", fields: [merchantId], references: [id])
 
-  @@map("disbursement_account") // Maps the model to the `withdrawal` collection in MongoDB
+  @@map("disbursement_account")
 }
-
-
