@@ -1,30 +1,28 @@
-import jwt from 'express-jwt';
-import { expressjwt } from 'express-jwt';
-import { expressJwtSecret } from 'jwks-rsa';
-import { Request, Response, NextFunction } from 'express';
-import { config } from '../config';
+// src/middleware/auth.ts
+import { Request, Response, NextFunction } from 'express'
+import jwt from 'jsonwebtoken'
+import { prisma } from '../core/prisma'
 
-export const authMiddleware = expressjwt({
-  secret: expressJwtSecret({
-    cache: true,
-    rateLimit: true,
-    jwksRequestsPerMinute: 5,
-    jwksUri: `https://${config.api.auth0.domain}/.well-known/jwks.json`,
-  }) as jwt.GetVerificationKey,
-  audience: config.api.auth0.audience,
-  issuer: `https://${config.api.auth0.domain}/`,
-  algorithms: ['RS256'],
-});
+const JWT_SECRET = process.env.JWT_SECRET!
 
-export const authErrorHandler = (
-  err: any,
-  req: Request,
+export interface AuthRequest extends Request {
+  userId?: string
+}
+
+export async function authMiddleware(
+  req: AuthRequest,
   res: Response,
   next: NextFunction
-) => {
-  if (err.name === 'UnauthorizedError') {
-    res.status(401).json({ message: 'Invalid token' });
-  } else {
-    next(err);
+) {
+  const token = req.headers.authorization?.split(' ')[1]
+  if (!token) return res.status(401).json({ message: 'Unauthorized' })
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as { userId: string }
+    const user = await prisma.partnerUser.findUnique({ where: { id: payload.userId } })
+    if (!user || !user.isActive) return res.status(401).json({ message: 'Unauthorized' })
+    req.userId = payload.userId
+    next()
+  } catch {
+    return res.status(401).json({ message: 'Unauthorized' })
   }
-};
+}

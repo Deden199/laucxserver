@@ -1,5 +1,5 @@
-const generateRandomId = (length: number): String => {
-    const charset = '0123456789';
+const generateRandomId = (length: number = 32): string => {
+        const charset = '0123456789';
     let randomString = '';
     
     for (let i = 0; i < length; i++) {

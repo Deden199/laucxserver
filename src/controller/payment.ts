@@ -1,45 +1,103 @@
 import { Request, Response } from 'express';
 import { createErrorResponse, createSuccessResponse } from '../util/response';
-import paymentService, { Transaction } from '../service/payment';
+import paymentService, {
+  Transaction,
+  OrderRequest,
+  OrderResponse,
+} from '../service/payment';
 
-const createTransaction = async (req: Request, res: Response) => {
+/* ═════════ 1. Buat transaksi (legacy & Hilogate) ═════════ */
+export const createTransaction = async (req: Request, res: Response) => {
   try {
-    // Ambil data dari route params dan query
-    const transaction: Transaction = {
-      merchantName: req.params.merchantId, // Gunakan "gv" atau "gudangvoucher" untuk integrasi GV
-      price: Number(req.params.amount),
-      buyer: req.query.userId as string,
+    // Support both new and legacy payloads
+    const merchantName = req.body.merchantName ?? req.body.merchantId;
+    const price = req.body.price ?? req.body.amount;
+    const buyer = req.body.buyer ?? req.body.userId;
+
+    if (!merchantName || price == null) {
+      return res
+        .status(400)
+        .json(
+          createErrorResponse(
+            '`merchantName` (atau `merchantId`) dan `price` (atau `amount`) wajib di-isi'
+          )
+        );
+    }
+
+    const trx: Transaction = {
+      merchantName: String(merchantName),
+      price: Number(price),
+      buyer: String(buyer ?? ''),
     };
 
-    const paymentResponse = await paymentService.createTransaction(transaction);
-    return res.status(200).json(createSuccessResponse(paymentResponse));
-  } catch (error: any) {
-    return res.status(500).json(createErrorResponse(error.message || 'Merchant not found'));
+    const result = await paymentService.createTransaction(trx);
+    return res.status(201).json(createSuccessResponse(result));
+  } catch (err: any) {
+    return res
+      .status(500)
+      .json(createErrorResponse(err.message ?? 'Internal error'));
   }
 };
 
-const transactionCallback = async (req: Request, res: Response) => {
+/* ═════════ 2. Callback dari payment-gateway ═════════ */
+export const transactionCallback = async (req: Request, res: Response) => {
   try {
-    const callbackResponse = await paymentService.transactionCallback(req);
-    return res.status(201).json(createSuccessResponse('Transaction stored successfully'));
-  } catch (error: any) {
-    return res.status(500).json(createErrorResponse('Processing failed'));
+    await paymentService.transactionCallback(req);
+    return res
+      .status(200)
+      .json(createSuccessResponse({ message: 'Callback stored' }));
+  } catch (err: any) {
+    return res
+      .status(400)
+      .json(createErrorResponse(err.message ?? 'Callback failed'));
   }
 };
 
-const checkPaymentStatus = async (req: Request, res: Response) => {
+/* ═════════ 3. Cek status order ═════════ */
+export const checkPaymentStatus = async (req: Request, res: Response) => {
   try {
-    const paymentStatusResponse = await paymentService.checkPaymentStatus(req);
-    return res.status(201).json(createSuccessResponse(paymentStatusResponse));
-  } catch (error: any) {
-    return res.status(500).json(createErrorResponse('No Response yet'));
+    const statusResp = await paymentService.checkPaymentStatus(req);
+    return res.status(200).json(createSuccessResponse(statusResp));
+  } catch (err: any) {
+    return res
+      .status(400)
+      .json(createErrorResponse(err.message ?? 'Unable to fetch status'));
   }
 };
 
-const paymentController = {
+/* ═════════ 4. Buat order agregator ═════════ */
+export const createOrder = async (req: Request, res: Response) => {
+  try {
+    const payload = req.body as OrderRequest;
+    const order: OrderResponse = await paymentService.createOrder(payload);
+    return res.status(201).json(createSuccessResponse(order));
+  } catch (err: any) {
+    return res
+      .status(400)
+      .json(createErrorResponse(err.message ?? 'Order creation failed'));
+  }
+};
+
+/* ═════════ 5. Ambil detail order (QR, amount, channel) ═════════ */
+export const getOrder = async (req: Request, res: Response) => {
+  try {
+    const orderId = req.params.id;
+    const order = await paymentService.getOrder(orderId);
+    if (!order) {
+      return res.status(404).json(createErrorResponse('Order not found'));
+    }
+    return res.status(200).json(createSuccessResponse(order));
+  } catch (err: any) {
+    return res
+      .status(500)
+      .json(createErrorResponse(err.message ?? 'Unable to fetch order'));
+  }
+};
+
+export default {
   createTransaction,
   transactionCallback,
   checkPaymentStatus,
+  createOrder,
+  getOrder,
 };
-
-export default paymentController;

@@ -1,4 +1,5 @@
 import {Request} from "express";
+import type { Transaction } from '../../service/payment';
 
 const mockPaymentService = {
     /**

@@ -1,6 +1,7 @@
-import express, { Request, Response } from 'express';
+// src/app.ts
+import express, { Request, Response, NextFunction } from 'express';
 import { config, swaggerConfig } from './config';
-import cors from 'cors';
+import cors, { CorsOptions } from 'cors';
 import router from './route/routes';
 import Context from './util/context';
 import logger from './logger';
@@ -10,37 +11,55 @@ import swaggerUi from 'swagger-ui-express';
 
 const app = express();
 
-if (config.node_env == 'development') {
-  const swaggerSpec = swaggerJsdoc(swaggerConfig);
-  app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-}
+// 1. JSON parser
+app.use(express.json());
 
-app.use((req, res, next) => {
-    Context.bind(req);
-    next();
+// 2. Health-check endpoint
+app.get('/', (_req: Request, res: Response) => {
+  res.status(200).send(`✅ Server is running on port ${config.api.port}`);
 });
 
-const allowedOrigins = ['https://launcx.com', 'http://localhost:3000', 'https://www.launcx.com', 'https://qris.link', 'https://www.qris.link', 'https://laucnxfrontend.vercel.app',`${config.api.swaggerUrl}`];
-// CORS options to allow specific origins
-const corsOptions: cors.CorsOptions = {
-    origin: function (origin, callback) {
-      if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-        // Allow requests with no origin (e.g., mobile apps, Postman)
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-  };
+// 3. Swagger UI (selalu aktif di dev)
+const swaggerSpec = swaggerJsdoc(swaggerConfig);
+app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-  
-// use cors
-  
+// 4. Bind async context
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  Context.bind(req);
+  next();
+});
+
+// 5. CORS setup
+const allowedOrigins = [
+  'https://launcx.com',
+  'http://localhost:3001',
+  `http://localhost:${config.api.port}`,
+];
+const corsOptions: CorsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+};
 app.use(cors(corsOptions));
-app.use(requestLogger);
-app.use(express.json());
-app.use(router);
 
+// 6. Request logging
+app.use(requestLogger);
+
+// 7. Mount all routes under /api/v1
+app.use('/api/v1', router);
+
+// 8. Global error handler
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  logger.error(err);
+  res.status(500).json({ error: err.message });
+});
+
+// 9. Start server
 app.listen(config.api.port, () => {
-    console.log('Server is listening on port ' + config.api.port + '!');
+  console.log(`🚀 Server listening on http://localhost:${config.api.port}/api/v1`);
+  console.log(`🔖 Swagger UI available at http://localhost:${config.api.port}/swagger`);
 });

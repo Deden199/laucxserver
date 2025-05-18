@@ -3,6 +3,7 @@ import livePaymentService from "../service/payment";
 import {createErrorResponse, createSuccessResponse} from "../util/response";
 import mockPaymentService from "../mocks/service/payment";
 import { config } from "../config";
+import type { Transaction } from '../service/payment'; 
 
 const paymentService = config.mockEnabled ? mockPaymentService : livePaymentService;
 

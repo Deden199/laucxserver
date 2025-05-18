@@ -1,48 +1,77 @@
-import disbursementController from '../controller/disbursement';
+// src/route/disbursement.routes.ts
+
 import { Router } from 'express';
+import disbursementController from '../controller/disbursement';
 
 const disbursementRouter = Router();
+
+/**
+ * @swagger
+ * tags:
+ *   - name: V1 Disbursement
+ *     description: Disbursement API v1
+ */
+
+/**
+ * @swagger
+ * /disbursements/disbursement:
+ *   post:
+ *     summary: Create a disbursement
+ *     tags:
+ *       - V1 Disbursement
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/DisbursementRequest'
+ *     responses:
+ *       '200':
+ *         description: Disbursement created successfully.
+ */
+disbursementRouter.post(
+  '/disbursement',
+  disbursementController.createWithdrawal
+);
 
 /**
  * @swagger
  * /disbursements/disbursement/callback:
  *   post:
  *     summary: Store disbursement callback
- *     description: Receives the disbursement callback, stores the data, and updates the transaction status.
  *     tags:
- *     - V1 Disbursement
+ *       - V1 Disbursement
  *     requestBody:
- *       description: Callback data from the disbursement service.
+ *       required: true
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             properties:
- *               partnerReferenceNo:
- *                 type: string
- *                 description: Reference ID for the disbursement transaction.
+ *             $ref: '#/components/schemas/DisbursementCallback'
  *     responses:
- *       201:
- *         description: Transaction successfully stored.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Transaction stored successfully
- *       500:
- *         description: Internal server error while processing the callback.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Processing failed
+ *       '201':
+ *         description: Transaction stored successfully.
+ *       '400':
+ *         description: Invalid signature.
  */
-disbursementRouter.post('/disbursement/callback', disbursementController.transactionCallback);
+disbursementRouter.post(
+  '/disbursement/callback',
+  disbursementController.transactionCallback
+);
+
+/**
+ * @swagger
+ * /disbursements/balance:
+ *   get:
+ *     summary: Get merchant balance
+ *     tags:
+ *       - V1 Disbursement
+ *     responses:
+ *       '200':
+ *         description: Balance retrieved successfully.
+ */
+disbursementRouter.get(
+  '/balance',
+  disbursementController.getBalance
+);
 
 export default disbursementRouter;

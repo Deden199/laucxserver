@@ -5,7 +5,7 @@ import { createErrorResponse, createSuccessResponse } from "../util/response";
 import { config } from "../config";
 
 // Choose which service to use based on configuration.
-const disbursementService = config.mockEnabled ? mockDisbursementService : liveDisbursementService;
+const disbursementService = liveDisbursementService;
 
 // Interfaces for request structures (optional, but recommended).
 interface DisbursementRequest {

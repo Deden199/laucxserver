@@ -1,9 +1,12 @@
-// schema.prisma
-
 generator client {
   provider      = "prisma-client-js"
   engineType    = "binary"
   binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
 }
 
 enum DisbursementStatus {
@@ -13,31 +16,26 @@ enum DisbursementStatus {
   FAILED
 }
 
-datasource db {
-  provider = "mongodb"
-  url      = env("DATABASE_URL")
-}
-
 model merchant {
-  id                   String                @id @default(auto()) @map("_id") @db.ObjectId
-  phoneNumber          String
-  name                 String
-  email                String?
-  telegram             String?
-  mdr                  Float
-  createdAt            DateTime              @default(now())
-  subMerchants         sub_merchant[]        @relation("MerchantSubMerchants")
-  transactionRequests  transaction_request[] @relation("MerchantTransactionRequests")
-  disbursements        disbursement[]        @relation("MerchantDisbursements")
-  disbursement_accounts disbursement_account[] @relation("MerchantDisbursementAccount")
+  id                    String                  @id @default(auto()) @map("_id") @db.ObjectId
+  phoneNumber           String
+  name                  String
+  email                 String?
+  telegram              String?
+  mdr                   Float
+  createdAt             DateTime                @default(now())
+  subMerchants          sub_merchant[]          @relation("MerchantSubMerchants")
+  transactionRequests   transaction_request[]   @relation("MerchantTransactionRequests")
+  disbursements         disbursement[]          @relation("MerchantDisbursements")
+  disbursement_accounts disbursement_account[]  @relation("MerchantDisbursementAccount")
 }
 
 model sub_merchant {
-  id             String    @id @default(auto()) @map("_id") @db.ObjectId
-  merchantId     String    @db.ObjectId
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  merchantId     String   @db.ObjectId
   netzMerchantId String
   netzPartnerId  String
-  merchant       merchant  @relation("MerchantSubMerchants", fields: [merchantId], references: [id])
+  merchant       merchant @relation("MerchantSubMerchants", fields: [merchantId], references: [id])
 }
 
 model transaction_request {
@@ -50,9 +48,7 @@ model transaction_request {
   createdAt        DateTime   @default(now())
   settlementAmount Int?
   settlementAt     DateTime?
-  // Field tambahan untuk menandai provider pembayaran
   paymentProvider  String?
-  // Field untuk menyimpan custom reference dari gateway (misalnya, untuk GudangVoucher)
   gatewayCustom    String?
   merchant         merchant   @relation("MerchantTransactionRequests", fields: [merchantId], references: [id])
 }
@@ -116,4 +112,43 @@ model disbursement_account {
   merchant    merchant  @relation("MerchantDisbursementAccount", fields: [merchantId], references: [id])
 
   @@map("disbursement_account")
+}
+
+model Order {
+  id          String   @id @default(uuid()) @map("_id")
+  userId      String
+  amount      Float
+  channel     String
+  status      String   @default("PENDING")
+  qrPayload   String?
+  checkoutUrl String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PartnerUser {
+  id        String   @id @default(uuid()) @map("_id")
+  name      String
+  email     String   @unique
+  password  String
+  role      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Setting {
+  id        String   @id @default(uuid()) @map("_id")
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model PartnerClient {
+  id        String   @id @default(uuid()) @map("_id")
+  name       String
+  apiKey     String   @unique
+  apiSecret  String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
 }

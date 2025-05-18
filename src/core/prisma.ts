@@ -4,7 +4,7 @@ import { config } from '../config';
 // This is a helper function that instantiates Prisma
 const instantiatePrisma = () => {
   const prisma = new PrismaClient({
-    log: config.node_env === 'development' ? ['query', 'error', 'warn'] : ['error'],
+    log: config.nodeEnv === 'development' ? ['query', 'error', 'warn'] : ['error'],
   });
 
   return prisma;
@@ -14,6 +14,10 @@ const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
 };
 
-export const prisma = globalForPrisma.prisma ?? instantiatePrisma();
+export const prisma =
+  globalForPrisma.prisma ?? instantiatePrisma();
 
-if (config.node_env !== 'production') globalForPrisma.prisma = prisma;
+// Prevent multiple instances in development for hot-reloading
+if (config.nodeEnv !== 'production') {
+  globalForPrisma.prisma = prisma;
+}

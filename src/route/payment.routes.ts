@@ -1,174 +1,106 @@
-import paymentController from '../controller/payment';
+/* ─────────────────── src/route/payment.routes.ts ─────────────────── */
 import { Router } from 'express';
+import paymentController from '../controller/payment';
 
 const paymentRouter = Router();
 
+/* ════════════════ 1. Create Order (aggregator flow) ════════════════ */
 /**
  * @swagger
- * /payments/transaction/callback:
+ * /api/v1/create-order:
  *   post:
- *     summary: Handle transaction callback
- *     description: Receives the transaction callback, updates the transaction status, sends notification.
- *     tags:
- *       - V1 Payment
- *     operationId: transactionCallback
+ *     summary: Create a new payment order (aggregator flow)
+ *     tags: [V1 Payment]
  *     requestBody:
- *       description: Callback data from the payment service.
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/OrderRequest'
+ *     responses:
+ *       201:
+ *         description: Order created
+ */
+paymentRouter.post('/create-order', paymentController.createOrder);
+
+/* ════════════════ 2. Create Transaction (legacy / direct) ══════════ */
+/**
+ * @swagger
+ * /api/v1/payment:
+ *   post:
+ *     summary: Create a payment transaction (QR / checkout URL)
+ *     tags: [V1 Payment]
+ *     requestBody:
+ *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [amount, userId]
  *             properties:
- *               originalPartnerReferenceNo:
- *                 type: string
- *                 description: The reference ID for the original transaction.
- *               amount:
- *                 type: object
- *                 properties:
- *                   value:
- *                     type: number
- *                     description: The transaction amount.
- *               settlementAmount:
- *                 type: number
- *                 description: The settled transaction amount.
- *               additionalInfo:
- *                 type: object
- *                 properties:
- *                   qrDetail:
- *                     type: object
- *                     properties:
- *                       buyerFullname:
- *                         type: string
- *                         description: The name of the buyer.
- *                   paymentTime:
- *                     type: string
- *                     description: The payment time in ISO format.
+ *               amount:     { type: number, example: 100000 }
+ *               userId:     { type: string, example: USER123 }
+ *               merchantId: { type: string, example: gv, description: optional }
  *     responses:
  *       201:
- *         description: Transaction successfully stored and processed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Transaction stored successfully
- *       500:
- *         description: Internal server error while processing the callback.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Processing failed
+ *         description: Transaction created
  */
-paymentRouter.post('/transaction/callback', paymentController.transactionCallback);
+paymentRouter.post('/payment', paymentController.createTransaction);
 
+/* ════════════════ 3. Callback dari Payment-Gateway ═════════════════ */
 /**
  * @swagger
- * /payments/payment/{merchantId}/{amount}:
- *   get:
- *     summary: Create a transaction for a payment
- *     description: Creates a transaction for a payment, returns the payment QR code and details.
- *     tags:
- *       - V1 Payment
- *     operationId: createTransaction
- *     parameters:
- *       - in: path
- *         name: merchantId
- *         required: true
- *         description: The merchant's phone number or identifier. Use "gv" or "gudangvoucher" untuk menggunakan alur GudangVoucher.
- *         schema:
- *           type: string
- *       - in: path
- *         name: amount
- *         required: true
- *         description: The amount for the transaction.
- *         schema:
- *           type: string
- *       - in: query
- *         name: userId
- *         required: true
- *         description: The ID of the buyer.
- *         schema:
- *           type: string
+ * /api/v1/transaction/callback:
+ *   post:
+ *     summary: Handle transaction callback (2C2P / Netz / GV)
+ *     tags: [V1 Payment]
  *     responses:
  *       200:
- *         description: Transaction successfully created and QR code generated.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 qrImage:
- *                   type: string
- *                   description: The QR code image URL.
- *                 totalAmount:
- *                   type: number
- *                   description: The total transaction amount.
- *                 expiredTs:
- *                   type: string
- *                   description: The expiration timestamp of the transaction.
- *                 referenceNo:
- *                   type: string
- *                   description: The reference ID of the transaction.
- *       500:
- *         description: Internal server error while processing the transaction creation.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Merchant not found
+ *         description: Callback processed
  */
-paymentRouter.get('/payment/:merchantId/:amount', paymentController.createTransaction);
+paymentRouter.post(
+  '/transaction/callback',
+  paymentController.transactionCallback,
+);
 
+/* ════════════════ 4. Ambil detail Order (QR, amount, dll.) ═════════ */
 /**
  * @swagger
- * /payments/status/{referenceId}:
+ * /api/v1/order/{id}:
  *   get:
- *     summary: Check the payment status
- *     description: Retrieves the status of a payment transaction using the reference ID, returns the current status.
- *     tags:
- *       - V1 Payment
- *     operationId: checkPaymentStatus
+ *     summary: Get order detail by ID (QR payload, amount, channel)
+ *     tags: [V1 Payment]
  *     parameters:
  *       - in: path
- *         name: referenceId
+ *         name: id
  *         required: true
- *         description: The reference ID of the payment transaction.
- *         schema:
- *           type: string
+ *         schema: { type: string }
  *     responses:
  *       200:
- *         description: Payment status retrieved successfully.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   description: The status of the payment transaction.
- *                   enum:
- *                     - IN_PROGRESS
- *                     - DONE
- *       500:
- *         description: Internal server error while checking payment status.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: No Response yet
+ *         description: Order detail
+ *       404:
+ *         description: Order not found
  */
-paymentRouter.get('/status/:referenceId', paymentController.checkPaymentStatus);
+paymentRouter.get('/order/:id', paymentController.getOrder);
+
+/* ════════════════ 5. Cek status Order ══════════════════════════════ */
+/**
+ * @swagger
+ * /api/v1/order/{id}/status:
+ *   get:
+ *     summary: Check payment status by order ID
+ *     tags: [V1 Payment]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Status returned
+ *       404:
+ *         description: Order not found
+ */
+paymentRouter.get('/order/:id/status', paymentController.checkPaymentStatus);
 
 export default paymentRouter;
