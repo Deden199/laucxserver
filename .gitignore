@@ -65,3 +65,4 @@ coverage/
 # Miscellaneous
 /.husky/_/
 node_modules/
+.env.save
