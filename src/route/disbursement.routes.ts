@@ -1,5 +1,4 @@
-// src/route/disbursement.routes.ts
-
+/* ──────── src/route/disbursement.routes.ts ──────── */
 import { Router } from 'express';
 import disbursementController from '../controller/disbursement';
 
@@ -7,18 +6,10 @@ const disbursementRouter = Router();
 
 /**
  * @swagger
- * tags:
- *   - name: V1 Disbursement
- *     description: Disbursement API v1
- */
-
-/**
- * @swagger
- * /disbursements/disbursement:
+ * /api/v1/disbursements/create:
  *   post:
- *     summary: Create a disbursement
- *     tags:
- *       - V1 Disbursement
+ *     summary: Create a new disbursement
+ *     tags: [V1 Disbursement]
  *     requestBody:
  *       required: true
  *       content:
@@ -26,21 +17,17 @@ const disbursementRouter = Router();
  *           schema:
  *             $ref: '#/components/schemas/DisbursementRequest'
  *     responses:
- *       '200':
+ *       201:
  *         description: Disbursement created successfully.
  */
-disbursementRouter.post(
-  '/disbursement',
-  disbursementController.createWithdrawal
-);
+disbursementRouter.post('/create', disbursementController.createWithdrawal);
 
 /**
  * @swagger
- * /disbursements/disbursement/callback:
+ * /api/v1/disbursements/callback:
  *   post:
- *     summary: Store disbursement callback
- *     tags:
- *       - V1 Disbursement
+ *     summary: Handle disbursement callback from gateway
+ *     tags: [V1 Disbursement]
  *     requestBody:
  *       required: true
  *       content:
@@ -48,30 +35,23 @@ disbursementRouter.post(
  *           schema:
  *             $ref: '#/components/schemas/DisbursementCallback'
  *     responses:
- *       '201':
- *         description: Transaction stored successfully.
- *       '400':
- *         description: Invalid signature.
+ *       200:
+ *         description: Callback processed successfully.
+ *       400:
+ *         description: Invalid signature or payload.
  */
-disbursementRouter.post(
-  '/disbursement/callback',
-  disbursementController.transactionCallback
-);
+disbursementRouter.post('/callback', disbursementController.transactionCallback);
 
 /**
  * @swagger
- * /disbursements/balance:
+ * /api/v1/disbursements/balance:
  *   get:
- *     summary: Get merchant balance
- *     tags:
- *       - V1 Disbursement
+ *     summary: Get current merchant balance
+ *     tags: [V1 Disbursement]
  *     responses:
- *       '200':
+ *       200:
  *         description: Balance retrieved successfully.
  */
-disbursementRouter.get(
-  '/balance',
-  disbursementController.getBalance
-);
+disbursementRouter.get('/balance', disbursementController.getBalance);
 
 export default disbursementRouter;

@@ -21,7 +21,10 @@ export const config = {
       process.env.CALLBACK_URL_FINISH ||
       `${process.env.BASE_URL || `http://localhost:${PORT}`}/?status=success`,
     // Netzme configuration
-    netz: {
+    expectedApiKey:
+      process.env.EXPECTED_API_KEY || 'a240f00aba8cdb2d8622ae778fa36598',
+      
+      netz: {
       url: process.env.NETZ_URL ||
         'https://tokoapisnap-stg.netzme.com',
       partnerId: process.env.NETZ_PARTNER_ID || '',
