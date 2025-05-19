@@ -1,4 +1,3 @@
-// src/app.ts
 import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -7,15 +6,14 @@ import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 
 import { config, swaggerConfig } from './config';
-console.log('🚀 Starting server with expectedApiKey =', config.api.expectedApiKey);
 
 import logger from './logger';
 import requestLogger from './middleware/log';
 import apiKeyAuth from './middleware/apiKeyAuth';
 
-import paymentRouter from './route/payment.routes';
+import paymentController from './controller/payment';
+import paymentRouter     from './route/payment.routes';
 import disbursementRouter from './route/disbursement.routes';
-// import other routers if needed, e.g. v2, auth, etc.
 
 const app = express();
 
@@ -45,7 +43,6 @@ app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // 6. Bind async context
 app.use((req: Request, _res: Response, next: NextFunction) => {
-  // if using async context utility
   // Context.bind(req);
   next();
 });
@@ -74,11 +71,17 @@ app.use(cors(corsOptions));
 // 8. Request logging
 app.use(requestLogger);
 
-// 9. Mount V1 routes with API-key auth
+// 8.5. Public callback endpoint (tidak butuh API key)
+app.post(
+  '/api/v1/payments/transaction/callback',
+  paymentController.transactionCallback
+);
+
+// 9. Protected payment & disbursement routes
 app.use('/api/v1/payments', apiKeyAuth, paymentRouter);
 app.use('/api/v1/disbursements', apiKeyAuth, disbursementRouter);
 
-// 10. Mount additional routers (e.g. v2, auth) if any
+// 10. Mount additional routers if needed
 // app.use('/api/v2', authRouter, v2Router);
 
 // 11. Global error handler

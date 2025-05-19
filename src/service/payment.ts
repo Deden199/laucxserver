@@ -319,9 +319,47 @@ export const checkPaymentStatus = async (req: Request) => {
 
 /* ═════════════ 4. Create Aggregated Order ═════════════ */
 export const createOrder = async (payload: OrderRequest): Promise<OrderResponse> => {
+  const forced = config.api.forceProvider?.toLowerCase() || null;
+  // 2) Kalau di-override jadi Hilogate, panggil flow direct dan return
+if (forced === 'hilogate') {
+  // gunakan createTransaction untuk Hilogate
+  const direct = await createTransaction({
+    merchantName: 'hilogate',
+    price:        payload.amount,
+    buyer:        payload.userId,
+  });
+  const { qrImage, totalAmount, expiredTs, referenceNo } = direct;
+  const checkoutUrl = `${config.api.baseUrl}/api/v1/checkout/${referenceNo}`;
+  // simpan ke tabel Order
+  await prisma.order.create({
+    data: {
+      id:           referenceNo,
+      userId:       payload.userId,
+      amount:       totalAmount,
+      channel:      'hilogate',
+      status:       'PENDING',
+      qrPayload:    qrImage,
+      checkoutUrl,
+    },
+  });
+  // return langsung
+  return {
+    orderId:    referenceNo,
+    qrPayload:  qrImage,
+    checkoutUrl,
+  };
+}
+
   const providers = await getActiveProvidersForClient(payload.userId);
   if (!providers.length) throw new Error(`No active payment channels for user ${payload.userId}`);
-  const channel = providers[Math.floor(Math.random() * providers.length)];
+let chosen;
+if (forced) {
+  chosen = providers.find(p => p.name.toLowerCase() === forced);
+  if (!chosen) throw new Error(`Provider override "${forced}" tidak tersedia`);
+} else {
+  chosen = providers[Math.floor(Math.random() * providers.length)];
+}
+const channel = chosen;
   const orderId = generateRandomId();
   let qrPayload: string | undefined;
   let checkoutUrl: string;
