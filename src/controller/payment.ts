@@ -5,6 +5,7 @@ import paymentService, {
   OrderRequest,
   OrderResponse,
 } from '../service/payment';
+import { prisma } from '../core/prisma';
 
 /* ═════════ 1. Buat transaksi (legacy & Hilogate) ═════════ */
 export const createTransaction = async (req: Request, res: Response) => {
@@ -42,16 +43,33 @@ export const createTransaction = async (req: Request, res: Response) => {
 /* ═════════ 2. Callback dari payment-gateway ═════════ */
 export const transactionCallback = async (req: Request, res: Response) => {
   try {
+    // --- panggil service yang validasi signature dan update transaction_request
     await paymentService.transactionCallback(req);
+
+    // --- ambil refId dari body (misal: Hilogate gunakan data.ref_id)
+    const refId = (req.body.data?.ref_id as string) || (req.body.originalPartnerReferenceNo as string);
+    if (refId) {
+      // update juga tabel Order supaya qrPayload & status terisi
+      await prisma.order.update({
+        where: { id: refId },
+        data: {
+          status: req.body.data?.status === 'SUCCESS' ? 'DONE' : 'FAILED',
+          // Hilogate mengirimkan QR string di data.qr_string
+          qrPayload: req.body.data?.qr_string,
+        },
+      });
+    }
+
     return res
       .status(200)
-      .json(createSuccessResponse({ message: 'Callback stored' }));
+      .json(createSuccessResponse({ message: 'Callback stored & Order updated' }));
   } catch (err: any) {
     return res
       .status(400)
       .json(createErrorResponse(err.message ?? 'Callback failed'));
   }
 };
+
 
 /* ═════════ 3. Cek status order ═════════ */
 export const checkPaymentStatus = async (req: Request, res: Response) => {
