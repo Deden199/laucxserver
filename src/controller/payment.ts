@@ -50,15 +50,19 @@ export const transactionCallback = async (req: Request, res: Response) => {
     if (!raw) throw new Error('Empty rawBody');
     logger.info('➡️ rawBody (truncated):', raw.slice(0, 200));
 
-    // 2) Hitung signature = MD5(rawBody + merchantSecretKey)
+    // 2) Hitung signature = MD5(requestPath + rawBody + merchantSecretKey)
+    const requestPath = req.originalUrl; // pastikan exactly '/api/v1/transaction/callback'
+    const signaturePayload = requestPath + raw + config.api.hilogate.secretKey;
+    logger.info('🔑 Signature payload:', signaturePayload);
+
     const expected = crypto
       .createHash('md5')
-      .update(raw + config.api.hilogate.secretKey)
+      .update(signaturePayload)
       .digest('hex');
 
     // 3) Ambil header signature
     const got = req.header('X-Signature') || req.header('x-signature') || '';
-    logger.info(`↔️ Signature – expected=${expected} got=${got}`);
+    logger.info(`↔️ Signature – expected=${expected}  got=${got}`);
     if (got !== expected) throw new Error('Invalid Hilogate signature');
 
     // 4) Simpan callback ke transaction_request
@@ -86,6 +90,7 @@ export const transactionCallback = async (req: Request, res: Response) => {
       .json(createErrorResponse(err.message));
   }
 };
+
 
 /* ═════════ 3. Cek status order ═════════ */
 export const checkPaymentStatus = async (req: Request, res: Response) => {
