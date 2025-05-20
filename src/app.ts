@@ -1,3 +1,4 @@
+// src/app.ts
 import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -6,48 +7,32 @@ import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 
 import { config, swaggerConfig } from './config';
-
 import logger from './logger';
 import requestLogger from './middleware/log';
 import apiKeyAuth from './middleware/apiKeyAuth';
-
 import paymentController from './controller/payment';
-import paymentRouter     from './route/payment.routes';
+import paymentRouter from './route/payment.routes';
 import disbursementRouter from './route/disbursement.routes';
 
 const app = express();
 
-// 1. Security headers
+// 1. Trust proxy (untuk X-Forwarded-For di rate-limit)
+app.set('trust proxy', 1);
+
+// 2. Security headers
 app.use(helmet());
 
-// 2. JSON parser with size limit
-app.use(express.json({ limit: '20kb' }));
+// 3. Rate limiting (global)
+app.use(rateLimit({
+  windowMs: 60_000,
+  max: 100,
+  message: 'Too many requests, try again later.'
+}));
 
-// 3. Rate limiting
-app.use(
-  rateLimit({
-    windowMs: 1 * 60 * 1000, // 1 minute
-    max: 100, // limit each IP
-    message: 'Too many requests from this IP, please try again later.',
-  })
-);
+// 4. Swagger UI (dev)
+app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerJsdoc(swaggerConfig)));
 
-// 4. Health-check endpoint
-app.get('/', (_req: Request, res: Response) => {
-  res.status(200).send(`✅ Server is running on port ${config.api.port}`);
-});
-
-// 5. Swagger UI (dev only)
-const swaggerSpec = swaggerJsdoc(swaggerConfig);
-app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-
-// 6. Bind async context
-app.use((req: Request, _res: Response, next: NextFunction) => {
-  // Context.bind(req);
-  next();
-});
-
-// 7. CORS setup
+// 5. CORS
 const allowedOrigins = [
   'https://launcx.com',
   'https://checkout1.launcx.com',
@@ -68,30 +53,37 @@ const corsOptions: CorsOptions = {
 };
 app.use(cors(corsOptions));
 
-// 8. Request logging
+// 6. Request logging
 app.use(requestLogger);
 
-// 8.5. Public callback endpoint (tidak butuh API key)
+// 7. CALLBACK PUBLIC (raw body) — TANPA API-KEY
+//    Hilogate callback harus mengarah ke /api/v1/transaction/callback
 app.post(
-  '/api/v1/payments/transaction/callback',
+  '/api/v1/transaction/callback',
+  express.raw({
+    type: '*/*',      // terima semua Content-Type
+    limit: '20kb',
+    verify: (req, _res, buf) => {
+      (req as any).rawBody = buf.toString('utf8');
+    }
+  }),
   paymentController.transactionCallback
 );
 
-// 9. Protected payment & disbursement routes
+// 8. JSON parser untuk semua route setelahnya
+app.use(express.json({ limit: '20kb' }));
+
+// 9. Protected Routes (butuh API-KEY)
 app.use('/api/v1/payments', apiKeyAuth, paymentRouter);
 app.use('/api/v1/disbursements', apiKeyAuth, disbursementRouter);
 
-// 10. Mount additional routers if needed
-// app.use('/api/v2', authRouter, v2Router);
-
-// 11. Global error handler
+// 10. Global error handler
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   logger.error(err);
-  const status = err.status || 500;
-  res.status(status).json({ error: err.message || 'Internal Server Error' });
+  res.status(err.status || 500).json({ error: err.message || 'Internal Server Error' });
 });
 
-// 12. Start server
+// 11. Start server
 app.listen(config.api.port, () => {
   console.log(`🚀 Server listening on http://localhost:${config.api.port}/api/v1`);
   console.log(`🔖 Swagger UI available at http://localhost:${config.api.port}/swagger`);

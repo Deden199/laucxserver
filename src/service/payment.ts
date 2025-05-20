@@ -232,35 +232,42 @@ export const createTransaction = async (request: Transaction) => {
 
 /* ═════════════ 2. Callback handler (signature + idempotensi) ═════════════ */
 export const transactionCallback = async (request: Request) => {
+  // langsung baca payload yang sudah ter-parse di controller
   const body = request.body;
 
   // Hilogate callback
-  const hlSig = request.headers['x-signature'] as string | undefined;
-  if (hlSig) {
-    const expected = crypto
-      .createHash('md5')
-      .update(JSON.stringify(body) + config.api.hilogate.secretKey)
-      .digest('hex');
-    if (hlSig !== expected) {
-      logger.error('Invalid Hilogate signature', { expected, got: hlSig });
-      throw new Error('Invalid Hilogate signature');
-    }
-    const refId = body.data?.ref_id;
-    if (!refId) throw new Error('Missing Hilogate ref_id');
-    const exists = await prisma.transaction_callback.findFirst({ where: { referenceId: refId } });
+  if (body.data?.ref_id) {
+    const refId = body.data.ref_id;
+
+    // simpan callback sekali saja
+    const exists = await prisma.transaction_callback.findFirst({
+      where: { referenceId: refId },
+    });
     if (!exists) {
-      await prisma.transaction_callback.create({ data: { referenceId: refId, requestBody: body } });
-      const status = body.data?.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED';
-      await prisma.transaction_request.update({ where: { id: refId }, data: { status } });
+      await prisma.transaction_callback.create({
+        data: { referenceId: refId, requestBody: body },
+      });
+      // update transaksi
+      const status = body.data.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED';
+      await prisma.transaction_request.update({
+        where: { id: refId },
+        data: { status },
+      });
     }
+
+    // notifikasi (telegram / email) tetap di sini
     try {
-      const tx = await prisma.transaction_request.findUnique({ where: { id: refId } });
-      const merch = tx ? await prisma.merchant.findUnique({ where: { id: tx.merchantId } }) : null;
+      const tx = await prisma.transaction_request.findUnique({
+        where: { id: refId },
+      });
+      const merch = tx
+        ? await prisma.merchant.findUnique({ where: { id: tx.merchantId } })
+        : null;
       if (merch?.telegram) {
         const msg = [
           `Reference ID : ${refId}`,
-          `Amount       : ${body.data?.amount}`,
-          `Status       : ${body.data?.status}`,
+          `Amount       : ${body.data.amount}`,
+          `Status       : ${body.data.status}`,
         ].join('\n');
         await sendTelegramMessage(merch.telegram, msg);
       }
@@ -268,15 +275,15 @@ export const transactionCallback = async (request: Request) => {
         await brevoAxiosInstance.post('', {
           to: [{ email: merch.email }],
           templateId: 1,
-          params: { amount: body.data?.amount, status: body.data?.status },
+          params: { amount: body.data.amount, status: body.data.status },
         });
       }
     } catch (err) {
       logger.error('Notification error', err);
     }
+
     return;
   }
-
   /* ─── 2C2P callback ─── */
   const sigHeader = request.headers['x-2c2p-signature'] as string | undefined;
   if (sigHeader) {

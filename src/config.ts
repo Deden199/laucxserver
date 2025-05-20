@@ -71,6 +71,8 @@ export const config = {
     hilogate: {
       // external merchant UUID dari .env
       merchantId: process.env.HILOGATE_MERCHANT_ID || '',
+      merchantSecretKey: process.env.HILOGATE_MERCHANT_SECRET_KEY || '',
+
       // secret key untuk signature
       secretKey:  process.env.HILOGATE_SECRET_KEY  || '',
       // sandbox | live

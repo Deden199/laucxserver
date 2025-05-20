@@ -1,3 +1,4 @@
+// src/core/hilogateClient.ts
 import axios from 'axios';
 import crypto from 'crypto';
 import { config } from '../config';
@@ -23,6 +24,15 @@ class HilogateClient {
     return crypto.createHash('md5').update(payload).digest('hex');
   }
 
+  /** Validasi signature callback Hilogate: MD5(request_body + secretKey) */
+  public verifyCallback(rawBody: string, signature: string): boolean {
+    const expected = crypto
+      .createHash('md5')
+      .update(rawBody + this.secretKey)
+      .digest('hex');
+    return expected === signature;
+  }
+
   /** Internal request helper */
   private async request(
     method: 'get' | 'post' | 'patch',
@@ -30,13 +40,21 @@ class HilogateClient {
     body: any = null
   ): Promise<any> {
     const signature = this.sign(path, body);
-    const headers = { 'X-Signature': signature };
-    const res = await this.axiosInst.request({ method, url: path, headers, data: body });
+    const res = await this.axiosInst.request({ 
+      method, 
+      url: path, 
+      headers: { 'X-Signature': signature }, 
+      data: body 
+    });
     return res.data;
   }
 
   /** Buat transaksi QRIS */
-  public async createTransaction(opts: { ref_id: string; amount: number; method?: string }): Promise<any> {
+  public async createTransaction(opts: {
+    ref_id: string;
+    amount: number;
+    method?: string;
+  }): Promise<any> {
     return this.request(
       'post',
       '/api/v1/transactions',

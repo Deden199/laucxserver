@@ -1,3 +1,6 @@
+import crypto from 'crypto';
+import { config } from '../config';
+import logger from '../logger';
 import { Request, Response } from 'express';
 import { createErrorResponse, createSuccessResponse } from '../util/response';
 import paymentService, {
@@ -40,36 +43,55 @@ export const createTransaction = async (req: Request, res: Response) => {
   }
 };
 
-/* ═════════ 2. Callback dari payment-gateway ═════════ */
 export const transactionCallback = async (req: Request, res: Response) => {
   try {
-    // --- panggil service yang validasi signature dan update transaction_request
+    // 1) Ambil rawBody persis
+    const raw = (req as any).rawBody as string;
+    if (!raw) throw new Error('Empty rawBody');
+
+    // 2) Parse ke objek dan normalisasi kembali
+    const bodyObj = JSON.parse(raw);
+    const normalized = JSON.stringify(bodyObj);
+
+    // 3) Hitung expected signature: MD5(normalizedBody + secretKey)
+    const expected = crypto
+      .createHash('md5')
+      .update(normalized + config.api.hilogate.secretKey)
+      .digest('hex');
+
+    // 4) Ambil signature dari header (case‐insensitive)
+    const got = req.header('X-Signature') || req.header('x-signature') || '';
+    logger.info('Hilogate callback signature', { expected, got });
+
+    if (got !== expected) {
+      logger.error('Invalid Hilogate signature', { expected, got, normalized });
+      throw new Error('Invalid Hilogate signature');
+    }
+
+    // 5) Simpan callback di transaction_request
     await paymentService.transactionCallback(req);
 
-    // --- ambil refId dari body (misal: Hilogate gunakan data.ref_id)
-    const refId = (req.body.data?.ref_id as string) || (req.body.originalPartnerReferenceNo as string);
-    if (refId) {
-      // update juga tabel Order supaya qrPayload & status terisi
-      await prisma.order.update({
-        where: { id: refId },
-        data: {
-          status: req.body.data?.status === 'SUCCESS' ? 'DONE' : 'FAILED',
-          // Hilogate mengirimkan QR string di data.qr_string
-          qrPayload: req.body.data?.qr_string,
-        },
-      });
-    }
+    // 6) Update order dengan status & qrPayload
+    const dataObj = bodyObj.data;
+    if (!dataObj?.ref_id) throw new Error('Missing data.ref_id');
+    await prisma.order.update({
+      where: { id: dataObj.ref_id },
+      data: {
+        status: dataObj.status === 'SUCCESS' ? 'DONE' : 'FAILED',
+        qrPayload: dataObj.qr_string,
+      },
+    });
 
     return res
       .status(200)
       .json(createSuccessResponse({ message: 'Callback stored & Order updated' }));
   } catch (err: any) {
+    logger.error('Callback error', err.message);
     return res
       .status(400)
-      .json(createErrorResponse(err.message ?? 'Callback failed'));
+      .json(createErrorResponse(err.message));
   }
 };
-
 
 /* ═════════ 3. Cek status order ═════════ */
 export const checkPaymentStatus = async (req: Request, res: Response) => {
