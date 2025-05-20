@@ -45,44 +45,33 @@ export const createTransaction = async (req: Request, res: Response) => {
 
 export const transactionCallback = async (req: Request, res: Response) => {
   try {
-    // 1) Tangkap rawBody
+    // 1) Ambil raw body persis
     const raw = (req as any).rawBody as string;
     if (!raw) throw new Error('Empty rawBody');
-
-    // 2) Debug logging
-    logger.info('➡️ Content-Type:', req.header('content-type'));
     logger.info('➡️ rawBody (truncated):', raw.slice(0, 200));
 
-    // 3) Minify JSON: hilangkan whitespace/newline
-    const compact = JSON.stringify(JSON.parse(raw));
-    logger.info('➡️ Compact JSON   :', compact);
-
-    // 4) Hitung expected signature = MD5(compact + merchantSecretKey)
+    // 2) Hitung signature = MD5(rawBody + merchantSecretKey)
     const expected = crypto
       .createHash('md5')
-      .update(compact + config.api.hilogate.secretKey)
+      .update(raw + config.api.hilogate.secretKey)
       .digest('hex');
 
-    // 5) Ambil signature header
+    // 3) Ambil header signature
     const got = req.header('X-Signature') || req.header('x-signature') || '';
-    logger.info(`↔️ Signature      : expected=${expected}  got=${got}`);
+    logger.info(`↔️ Signature – expected=${expected} got=${got}`);
+    if (got !== expected) throw new Error('Invalid Hilogate signature');
 
-    if (got !== expected) {
-      throw new Error('Invalid Hilogate signature');
-    }
-
-    // 6) Simpan callback ke transaction_request
+    // 4) Simpan callback ke transaction_request
     await paymentService.transactionCallback(req);
 
-    // 7) Update order dengan status & qrPayload
-    const body    = JSON.parse(raw);
+    // 5) Update order status & qrPayload
+    const body = JSON.parse(raw);
     const dataObj = body.data;
     if (!dataObj?.ref_id) throw new Error('Missing data.ref_id');
-
     await prisma.order.update({
       where: { id: dataObj.ref_id },
       data: {
-        status:    dataObj.status === 'SUCCESS' ? 'DONE' : 'FAILED',
+        status: dataObj.status === 'SUCCESS' ? 'DONE' : 'FAILED',
         qrPayload: dataObj.qr_string,
       },
     });
@@ -97,7 +86,6 @@ export const transactionCallback = async (req: Request, res: Response) => {
       .json(createErrorResponse(err.message));
   }
 };
-
 
 /* ═════════ 3. Cek status order ═════════ */
 export const checkPaymentStatus = async (req: Request, res: Response) => {
