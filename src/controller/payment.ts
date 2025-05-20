@@ -45,53 +45,46 @@ export const createTransaction = async (req: Request, res: Response) => {
 
 export const transactionCallback = async (req: Request, res: Response) => {
   try {
-    // 1) Tangkap rawBody dan request path persis
+    // 1) Baca rawBody persis
     const raw = (req as any).rawBody as string;
     if (!raw) throw new Error('Empty rawBody');
-    const path = req.originalUrl; // "/api/v1/transaction/callback"
 
-    // 2) Hitung signature = MD5(path + rawBody + merchantSecretKey)
+    // DEBUG log untuk verifikasi
+    logger.info('➡️ Content-Type:', req.header('content-type'));
+    logger.info('➡️ rawBody (truncated):', raw.slice(0, 200));
+
+    // 2) Hitung expected signature = MD5(rawBody + merchantSecretKey)
     const expected = crypto
       .createHash('md5')
-      .update(path + raw + config.api.hilogate.secretKey)
+      .update(raw + config.api.hilogate.secretKey)
       .digest('hex');
 
     // 3) Ambil signature dari header
-    const got = req.header('X-Signature') || '';
-    logger.info('Hilogate callback signature', { expected, got });
+    const got = req.header('X-Signature') || req.header('x-signature') || '';
+    logger.info(`↔️ Signature – expected=${expected} got=${got}`);
 
-    if (got !== expected) {
-      logger.error('Invalid Hilogate signature', { expected, got });
-      return res
-        .status(400)
-        .json(createErrorResponse('Invalid Hilogate signature'));
-    }
+    if (got !== expected) throw new Error('Invalid Hilogate signature');
 
-    // 4) Simpan payload ke transaction_callback + update transaction_request
+    // 4) Simpan ke transaction_callback
     await paymentService.transactionCallback(req);
 
-    // 5) Update tabel order: status & qrPayload
-    const body = JSON.parse(raw) as any;
+    // 5) Update tabel order dengan status & qrPayload
+    const body = JSON.parse(raw);
     const dataObj = body.data;
     if (!dataObj?.ref_id) throw new Error('Missing data.ref_id');
-    const refId = dataObj.ref_id as string;
 
     await prisma.order.update({
-      where: { id: refId },
+      where: { id: dataObj.ref_id },
       data: {
         status: dataObj.status === 'SUCCESS' ? 'DONE' : 'FAILED',
         qrPayload: dataObj.qr_string,
       },
     });
 
-    return res
-      .status(200)
-      .json(createSuccessResponse({ message: 'Callback stored & Order updated' }));
+    return res.status(200).json(createSuccessResponse({ message: 'Callback stored & Order updated' }));
   } catch (err: any) {
     logger.error('Callback error', err.message);
-    return res
-      .status(400)
-      .json(createErrorResponse(err.message));
+    return res.status(400).json(createErrorResponse(err.message));
   }
 };
 

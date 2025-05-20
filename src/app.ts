@@ -44,14 +44,10 @@ const allowedOrigins = [
   'http://localhost:3001',
   `http://localhost:${config.api.port}`,
 ];
-const corsOptions: CorsOptions = {
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) callback(null, true);
-    else callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-};
-app.use(cors(corsOptions));
+app.use(cors({
+  origin: (origin, cb) => cb(null, !origin || allowedOrigins.includes(origin)),
+  credentials: true
+}));
 
 // 6. Request logging
 app.use(requestLogger);
@@ -60,7 +56,7 @@ app.use(requestLogger);
 app.post(
   '/api/v1/transaction/callback',
   express.raw({
-    type: 'application/json',
+    type: () => true,    // terima semua Content-Type
     limit: '20kb',
     verify: (req, _res, buf) => {
       (req as any).rawBody = buf.toString('utf8');
@@ -68,6 +64,7 @@ app.post(
   }),
   paymentController.transactionCallback
 );
+
 // 8. JSON parser untuk semua route setelahnya
 app.use(express.json({ limit: '20kb' }));
 
