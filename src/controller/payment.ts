@@ -45,34 +45,27 @@ export const createTransaction = async (req: Request, res: Response) => {
 
 export const transactionCallback = async (req: Request, res: Response) => {
   try {
-    /* 1) Body mentah (Buffer) – HARUS ADA */
-    const rawBuf = (req as any).rawBody as Buffer;
-    if (!rawBuf?.length) throw new Error('Empty rawBody');
+    /* 1) BODY MENTAH */
+    const raw = (req as any).rawBody as Buffer;
+    if (!raw?.length) throw new Error('Empty rawBody');
 
-    /* 2) Hitung MD5(rawBody + secretKey) */
+    /* 2) HITUNG MD5(raw + secret) */
     const secret   = config.api.hilogate.secretKey.trim();
     const expected = crypto.createHash('md5')
-      .update(rawBuf)     // body persis
-      .update(secret)     // lalu secret
+      .update(raw)
+      .update(secret)
       .digest('hex')
       .toLowerCase();
 
     const got = (req.get('X-Signature') || '').toLowerCase();
 
-    logger.info(
-      'CB len=%d sig=%s… vs %s…',
-      rawBuf.length,
-      expected.slice(0, 8),
-      got.slice(0, 8)
-    );
+    /* 3) CETAK INFO */
+    console.log(`CB len=${raw.length} sig=${expected.slice(0,8)}… vs ${got.slice(0,8)}…`);
 
     if (got !== expected) throw new Error('Invalid Hilogate signature');
 
-    /* 3) (Opsional) simpan payload mentah */
-    // await paymentService.transactionCallback(req); // ← hapus jika tidak dipakai
-
-    /* 4) Update Order */
-    const { data } = JSON.parse(rawBuf.toString());
+    /* 4) PARSE & UPDATE */
+    const { data } = JSON.parse(raw.toString());
     if (!data?.ref_id) throw new Error('Missing data.ref_id');
 
     await prisma.order.update({
@@ -83,14 +76,10 @@ export const transactionCallback = async (req: Request, res: Response) => {
       },
     });
 
-    return res
-      .status(200)
-      .json(createSuccessResponse({ message: 'Callback stored & Order updated' }));
-  } catch (err: any) {
-    logger.error('Callback error:', err.message);
-    return res
-      .status(400)
-      .json(createErrorResponse(err.message));
+    return res.status(200).json({ ok: true });
+  } catch (err) {
+    console.error('Callback error:', err);   // <— cetak seluruh error & stack
+    return res.status(400).json({ error: (err as Error).message });
   }
 };
 /* ═════════ 3. Cek status order ═════════ */
