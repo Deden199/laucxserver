@@ -54,16 +54,13 @@ app.use(requestLogger);
 
 // 7. CALLBACK PUBLIC (raw body) — TANPA API-KEY
 app.post(
-  '/api/v1/transaction/callback',
-  express.raw({
-    type: () => true,    // terima semua Content-Type
-    limit: '20kb',
-    verify: (req, _res, buf) => {
-      (req as any).rawBody = buf.toString('utf8');
-    },
-  }),
+  '/api/v1/transactions/callback',
+  express.raw({ type: 'application/json', limit: '20kb', verify: (req, _res, buf) => {
+    (req as any).rawBody = buf.toString('utf8');
+  }}),
   paymentController.transactionCallback
 );
+
 
 // 8. JSON parser untuk semua route setelahnya
 app.use(express.json({ limit: '20kb' }));

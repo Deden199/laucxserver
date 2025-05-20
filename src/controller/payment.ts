@@ -45,13 +45,15 @@ export const createTransaction = async (req: Request, res: Response) => {
 
 export const transactionCallback = async (req: Request, res: Response) => {
   try {
-    // 1) Ambil raw body persis
+    // 1) Pastikan route-nya "/api/v1/transactions/callback"
+    const requestPath = '/api/v1/transactions/callback';
+
+    // 2) Ambil rawBody persis
     const raw = (req as any).rawBody as string;
     if (!raw) throw new Error('Empty rawBody');
-    logger.info('➡️ rawBody (truncated):', raw.slice(0, 200));
+    logger.info('➡️ rawBody (truncated):', raw.slice(0,200));
 
-    // 2) Hitung signature = MD5(requestPath + rawBody + merchantSecretKey)
-    const requestPath = req.originalUrl; // pastikan exactly '/api/v1/transaction/callback'
+    // 3) Bangun signaturePayload sesuai docs: path + raw + merchantSecretKey
     const signaturePayload = requestPath + raw + config.api.hilogate.secretKey;
     logger.info('🔑 Signature payload:', signaturePayload);
 
@@ -60,22 +62,24 @@ export const transactionCallback = async (req: Request, res: Response) => {
       .update(signaturePayload)
       .digest('hex');
 
-    // 3) Ambil header signature
+    // 4) Ambil header X-Signature
     const got = req.header('X-Signature') || req.header('x-signature') || '';
     logger.info(`↔️ Signature – expected=${expected}  got=${got}`);
+
     if (got !== expected) throw new Error('Invalid Hilogate signature');
 
-    // 4) Simpan callback ke transaction_request
+    // 5) Simpan ke transaction_request
     await paymentService.transactionCallback(req);
 
-    // 5) Update order status & qrPayload
+    // 6) Update tabel Order
     const body = JSON.parse(raw);
     const dataObj = body.data;
     if (!dataObj?.ref_id) throw new Error('Missing data.ref_id');
+
     await prisma.order.update({
       where: { id: dataObj.ref_id },
       data: {
-        status: dataObj.status === 'SUCCESS' ? 'DONE' : 'FAILED',
+        status:    dataObj.status === 'SUCCESS' ? 'DONE' : 'FAILED',
         qrPayload: dataObj.qr_string,
       },
     });
@@ -90,7 +94,6 @@ export const transactionCallback = async (req: Request, res: Response) => {
       .json(createErrorResponse(err.message));
   }
 };
-
 
 /* ═════════ 3. Cek status order ═════════ */
 export const checkPaymentStatus = async (req: Request, res: Response) => {
