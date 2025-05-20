@@ -1,38 +1,51 @@
 // src/app.ts
 import express, { Request, Response, NextFunction } from 'express';
-import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
-import cors, { CorsOptions } from 'cors';
-import swaggerJsdoc from 'swagger-jsdoc';
-import swaggerUi from 'swagger-ui-express';
+import helmet                    from 'helmet';
+import rateLimit                 from 'express-rate-limit';
+import cors                      from 'cors';
+import swaggerJsdoc              from 'swagger-jsdoc';
+import swaggerUi                 from 'swagger-ui-express';
 
 import { config, swaggerConfig } from './config';
-import logger from './logger';
-import requestLogger from './middleware/log';
-import apiKeyAuth from './middleware/apiKeyAuth';
-import paymentController from './controller/payment';
-import paymentRouter from './route/payment.routes';
-import disbursementRouter from './route/disbursement.routes';
+import logger                    from './logger';
+import requestLogger             from './middleware/log';
+import apiKeyAuth                from './middleware/apiKeyAuth';
+import paymentController         from './controller/payment';
+import paymentRouter             from './route/payment.routes';
+import disbursementRouter        from './route/disbursement.routes';
 
 const app = express();
 
-// 1. Trust proxy (untuk X-Forwarded-For di rate-limit)
-app.set('trust proxy', 1);
+/* ────────────────────────────────────────────────────────────────
+   0.  Parser RAW  (WAJIB paling atas, hanya untuk webhook Hilogate)
+   ──────────────────────────────────────────────────────────────── */
+app.use(
+  '/api/v1/transactions/callback',
+  express.raw({
+    limit : '20kb',
+    type  : () => true,                         // terima SEMUA Content-Type
+    verify: (req, _res, buf) => {
+      console.log('VERIFY len =', buf.length);  // debug—hapus bila sudah stabil
+      (req as any).rawBody = buf;               // simpan Buffer mentah
+    },
+  })
+);
 
-// 2. Security headers
+/* ────────────────────────────────────────────────────────────────
+   1.  Middleware umum
+   ──────────────────────────────────────────────────────────────── */
+app.set('trust proxy', 1);                      // X-Forwarded-For untuk rate-limit
 app.use(helmet());
 
-// 3. Rate limiting (global)
 app.use(rateLimit({
   windowMs: 60_000,
-  max: 100,
-  message: 'Too many requests, try again later.'
+  max     : 100,
+  message : 'Too many requests, try again later.'
 }));
 
-// 4. Swagger UI (dev)
-app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerJsdoc(swaggerConfig)));
+app.use('/swagger', swaggerUi.serve,
+  swaggerUi.setup(swaggerJsdoc(swaggerConfig)));
 
-// 5. CORS
 const allowedOrigins = [
   'https://launcx.com',
   'https://checkout1.launcx.com',
@@ -46,40 +59,39 @@ const allowedOrigins = [
 ];
 app.use(cors({
   origin: (origin, cb) => cb(null, !origin || allowedOrigins.includes(origin)),
-  credentials: true
+  credentials: true,
 }));
 
-// 6. Request logging
-app.use(requestLogger);
+app.use(requestLogger);                         // bebas menyentuh req.body – raw sudah tersalin
 
-// 7. CALLBACK PUBLIC (raw body) — TANPA API-KEY
-app.post(
-  '/api/v1/transactions/callback',
-  express.raw({
-    type: 'application/json',
-    limit: '20kb',
-    verify: (req, _res, buf) => {
-      // Simpan persis apa adanya, JANGAN di-toString
-      (req as any).rawBody = buf;     // <- biarkan Buffer
-    },
-  }),
-  paymentController.transactionCallback
-);
-
-// 8. JSON parser untuk semua route setelahnya
+/* ────────────────────────────────────────────────────────────────
+   2.  Parser JSON global (setelah raw)
+   ──────────────────────────────────────────────────────────────── */
 app.use(express.json({ limit: '20kb' }));
 
-// 9. Protected Routes (butuh API-KEY)
+/* ────────────────────────────────────────────────────────────────
+   3.  ROUTES
+   ──────────────────────────────────────────────────────────────── */
+// Public callback (tidak pakai API-KEY)
+app.post('/api/v1/transactions/callback',
+  paymentController.transactionCallback);
+
+// Protected routes
 app.use('/api/v1/payments', apiKeyAuth, paymentRouter);
 app.use('/api/v1/disbursements', apiKeyAuth, disbursementRouter);
 
-// 10. Global error handler
+/* ────────────────────────────────────────────────────────────────
+   4.  Global error handler
+   ──────────────────────────────────────────────────────────────── */
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   logger.error(err);
-  res.status(err.status || 500).json({ error: err.message || 'Internal Server Error' });
+  res.status(err.status || 500)
+     .json({ error: err.message || 'Internal Server Error' });
 });
 
-// 11. Start server
+/* ────────────────────────────────────────────────────────────────
+   5.  Start server
+   ──────────────────────────────────────────────────────────────── */
 app.listen(config.api.port, () => {
   console.log(`🚀 Server listening on http://localhost:${config.api.port}/api/v1`);
   console.log(`🔖 Swagger UI available at http://localhost:${config.api.port}/swagger`);

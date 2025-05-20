@@ -45,38 +45,54 @@ export const createTransaction = async (req: Request, res: Response) => {
 
 export const transactionCallback = async (req: Request, res: Response) => {
   try {
-    // 1) Ambil raw buffer persis seperti diterima
-    const rawBuf = (req as any).rawBody as Buffer;        // ← pastikan Buffer!
-    if (!rawBuf) throw new Error('Empty rawBody');
+    /* 1) Body mentah (Buffer) – HARUS ADA */
+    const rawBuf = (req as any).rawBody as Buffer;
+    if (!rawBuf?.length) throw new Error('Empty rawBody');
 
-    // 2) Hitung MD5(rawBody + SECRET_KEY)
-    const expected = crypto
-      .createHash('md5')
-      .update(Buffer.concat([rawBuf, Buffer.from(config.api.hilogate.secretKey)]))
-      .digest('hex');
+    /* 2) Hitung MD5(rawBody + secretKey) */
+    const secret   = config.api.hilogate.secretKey.trim();
+    const expected = crypto.createHash('md5')
+      .update(rawBuf)     // body persis
+      .update(secret)     // lalu secret
+      .digest('hex')
+      .toLowerCase();
 
-    // 3) Bandingkan dgn header X-Signature
-    const got = req.get('X-Signature') || '';
+    const got = (req.get('X-Signature') || '').toLowerCase();
+
+    logger.info(
+      'CB len=%d sig=%s… vs %s…',
+      rawBuf.length,
+      expected.slice(0, 8),
+      got.slice(0, 8)
+    );
+
     if (got !== expected) throw new Error('Invalid Hilogate signature');
 
-    // 4) Lanjutkan bisnis-logic persis seperti sebelumnya …
+    /* 3) (Opsional) simpan payload mentah */
+    // await paymentService.transactionCallback(req); // ← hapus jika tidak dipakai
+
+    /* 4) Update Order */
     const { data } = JSON.parse(rawBuf.toString());
-    await paymentService.transactionCallback(req);
+    if (!data?.ref_id) throw new Error('Missing data.ref_id');
+
     await prisma.order.update({
       where: { id: data.ref_id },
-      data: {
-        status: data.status === 'SUCCESS' ? 'DONE' : 'FAILED',
+      data : {
+        status   : data.status === 'SUCCESS' ? 'DONE' : 'FAILED',
         qrPayload: data.qr_string,
       },
     });
 
-    return res.status(200).json(createSuccessResponse({ message: 'Callback stored & Order updated' }));
+    return res
+      .status(200)
+      .json(createSuccessResponse({ message: 'Callback stored & Order updated' }));
   } catch (err: any) {
-    logger.error('Callback error', err.message);
-    return res.status(400).json(createErrorResponse(err.message));
+    logger.error('Callback error:', err.message);
+    return res
+      .status(400)
+      .json(createErrorResponse(err.message));
   }
 };
-
 /* ═════════ 3. Cek status order ═════════ */
 export const checkPaymentStatus = async (req: Request, res: Response) => {
   try {
