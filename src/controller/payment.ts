@@ -45,37 +45,39 @@ export const createTransaction = async (req: Request, res: Response) => {
 
 export const transactionCallback = async (req: Request, res: Response) => {
   try {
-    // 1) Ambil rawBody persis
+    // 1) Tangkap rawBody dan request path persis
     const raw = (req as any).rawBody as string;
     if (!raw) throw new Error('Empty rawBody');
+    const path = req.originalUrl; // "/api/v1/transaction/callback"
 
-    // 2) Parse ke objek dan normalisasi kembali
-    const bodyObj = JSON.parse(raw);
-    const normalized = JSON.stringify(bodyObj);
-
-    // 3) Hitung expected signature: MD5(normalizedBody + secretKey)
+    // 2) Hitung signature = MD5(path + rawBody + merchantSecretKey)
     const expected = crypto
       .createHash('md5')
-      .update(normalized + config.api.hilogate.secretKey)
+      .update(path + raw + config.api.hilogate.secretKey)
       .digest('hex');
 
-    // 4) Ambil signature dari header (case‐insensitive)
-    const got = req.header('X-Signature') || req.header('x-signature') || '';
+    // 3) Ambil signature dari header
+    const got = req.header('X-Signature') || '';
     logger.info('Hilogate callback signature', { expected, got });
 
     if (got !== expected) {
-      logger.error('Invalid Hilogate signature', { expected, got, normalized });
-      throw new Error('Invalid Hilogate signature');
+      logger.error('Invalid Hilogate signature', { expected, got });
+      return res
+        .status(400)
+        .json(createErrorResponse('Invalid Hilogate signature'));
     }
 
-    // 5) Simpan callback di transaction_request
+    // 4) Simpan payload ke transaction_callback + update transaction_request
     await paymentService.transactionCallback(req);
 
-    // 6) Update order dengan status & qrPayload
-    const dataObj = bodyObj.data;
+    // 5) Update tabel order: status & qrPayload
+    const body = JSON.parse(raw) as any;
+    const dataObj = body.data;
     if (!dataObj?.ref_id) throw new Error('Missing data.ref_id');
+    const refId = dataObj.ref_id as string;
+
     await prisma.order.update({
-      where: { id: dataObj.ref_id },
+      where: { id: refId },
       data: {
         status: dataObj.status === 'SUCCESS' ? 'DONE' : 'FAILED',
         qrPayload: dataObj.qr_string,
