@@ -45,53 +45,35 @@ export const createTransaction = async (req: Request, res: Response) => {
 
 export const transactionCallback = async (req: Request, res: Response) => {
   try {
-    // 1) Pastikan route-nya "/api/v1/transactions/callback"
-    const requestPath = '/api/v1/transactions/callback';
+    // 1) Ambil raw buffer persis seperti diterima
+    const rawBuf = (req as any).rawBody as Buffer;        // ← pastikan Buffer!
+    if (!rawBuf) throw new Error('Empty rawBody');
 
-    // 2) Ambil rawBody persis
-    const raw = (req as any).rawBody as string;
-    if (!raw) throw new Error('Empty rawBody');
-    logger.info('➡️ rawBody (truncated):', raw.slice(0,200));
-
-    // 3) Bangun signaturePayload sesuai docs: path + raw + merchantSecretKey
-    const signaturePayload = requestPath + raw + config.api.hilogate.secretKey;
-    logger.info('🔑 Signature payload:', signaturePayload);
-
+    // 2) Hitung MD5(rawBody + SECRET_KEY)
     const expected = crypto
       .createHash('md5')
-      .update(signaturePayload)
+      .update(Buffer.concat([rawBuf, Buffer.from(config.api.hilogate.secretKey)]))
       .digest('hex');
 
-    // 4) Ambil header X-Signature
-    const got = req.header('X-Signature') || req.header('x-signature') || '';
-    logger.info(`↔️ Signature – expected=${expected}  got=${got}`);
-
+    // 3) Bandingkan dgn header X-Signature
+    const got = req.get('X-Signature') || '';
     if (got !== expected) throw new Error('Invalid Hilogate signature');
 
-    // 5) Simpan ke transaction_request
+    // 4) Lanjutkan bisnis-logic persis seperti sebelumnya …
+    const { data } = JSON.parse(rawBuf.toString());
     await paymentService.transactionCallback(req);
-
-    // 6) Update tabel Order
-    const body = JSON.parse(raw);
-    const dataObj = body.data;
-    if (!dataObj?.ref_id) throw new Error('Missing data.ref_id');
-
     await prisma.order.update({
-      where: { id: dataObj.ref_id },
+      where: { id: data.ref_id },
       data: {
-        status:    dataObj.status === 'SUCCESS' ? 'DONE' : 'FAILED',
-        qrPayload: dataObj.qr_string,
+        status: data.status === 'SUCCESS' ? 'DONE' : 'FAILED',
+        qrPayload: data.qr_string,
       },
     });
 
-    return res
-      .status(200)
-      .json(createSuccessResponse({ message: 'Callback stored & Order updated' }));
+    return res.status(200).json(createSuccessResponse({ message: 'Callback stored & Order updated' }));
   } catch (err: any) {
     logger.error('Callback error', err.message);
-    return res
-      .status(400)
-      .json(createErrorResponse(err.message));
+    return res.status(400).json(createErrorResponse(err.message));
   }
 };
 
