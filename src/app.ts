@@ -13,22 +13,27 @@ import apiKeyAuth                from './middleware/apiKeyAuth';
 import paymentController         from './controller/payment';
 import paymentRouter             from './route/payment.routes';
 import disbursementRouter        from './route/disbursement.routes';
+import { transactionCallback } from './controller/payment';
 
 const app = express();
 
 /* ────────────────────────────────────────────────────────────────
    0.  Parser RAW  (WAJIB paling atas, hanya untuk webhook Hilogate)
    ──────────────────────────────────────────────────────────────── */
-app.use(
+app.post(
   '/api/v1/transactions/callback',
   express.raw({
     limit : '20kb',
-    type  : () => true,                         // terima SEMUA Content-Type
-    verify: (req, _res, buf) => {
-      console.log('VERIFY len =', buf.length);  // debug—hapus bila sudah stabil
+    type  : () => true,                         // terima semua Content-Type
+    verify: (req, _res, buf: Buffer) => {
+      console.log('VERIFY len =', buf.length);  // debug—hapus nanti
       (req as any).rawBody = buf;               // simpan Buffer mentah
     },
-  })
+  }),
+  // setelah raw, parse JSON agar req.body tetap terisi
+  express.json(),
+  // lalu panggil handler-mu
+  transactionCallback
 );
 
 /* ────────────────────────────────────────────────────────────────

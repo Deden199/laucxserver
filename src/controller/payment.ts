@@ -43,45 +43,54 @@ export const createTransaction = async (req: Request, res: Response) => {
   }
 };
 
+// === src/controller/payment.ts ===
 export const transactionCallback = async (req: Request, res: Response) => {
   try {
-    /* 1) BODY MENTAH */
-    const raw = (req as any).rawBody as Buffer;
-    if (!raw?.length) throw new Error('Empty rawBody');
+    // 1) Path fixed sesuai spec Hilogate
+    const requestPath = '/api/v1/transactions';
 
-    /* 2) HITUNG MD5(raw + secret) */
-    const secret   = config.api.hilogate.secretKey.trim();
-    const expected = crypto.createHash('md5')
-      .update(raw)
-      .update(secret)
-      .digest('hex')
-      .toLowerCase();
+    // 2) Ambil rawBody buffer → string
+    const raw = (req as any).rawBody.toString('utf8');
 
-    const got = (req.get('X-Signature') || '').toLowerCase();
-
-    /* 3) CETAK INFO */
-    console.log(`CB len=${raw.length} sig=${expected.slice(0,8)}… vs ${got.slice(0,8)}…`);
-
+    // 3) Hitung signature atas minimalPayload mereka
+    const full = JSON.parse(raw) as any;
+    const minimalPayload = {
+      ref_id: full.ref_id,
+      amount: full.amount,
+      method: full.method,
+    };
+    const minimalJson = JSON.stringify(minimalPayload);
+    const signaturePayload = requestPath + minimalJson + config.api.hilogate.secretKey;
+    const expected = crypto.createHash('md5').update(signaturePayload, 'utf8').digest('hex');
+    const got = req.header('X-Signature') || req.header('x-signature') || '';
     if (got !== expected) throw new Error('Invalid Hilogate signature');
 
-    /* 4) PARSE & UPDATE */
-    const { data } = JSON.parse(raw.toString());
-    if (!data?.ref_id) throw new Error('Missing data.ref_id');
+    // 4) Simpan callback ke DB
+    await paymentService.transactionCallback(req);
+
+    // 5) Update order berdasarkan full.ref_id (root) dan full.data.qr_string
+    const orderId = full.ref_id;
+    if (!orderId) throw new Error('Missing root ref_id');
+    const qr = full.data?.qr_string;
+    if (qr === undefined) throw new Error('Missing data.qr_string');
 
     await prisma.order.update({
-      where: { id: data.ref_id },
-      data : {
-        status   : data.status === 'SUCCESS' ? 'DONE' : 'FAILED',
-        qrPayload: data.qr_string,
+      where: { id: orderId },
+      data: {
+        status:    full.status === 'SUCCESS' ? 'DONE' : 'FAILED',
+        qrPayload: qr,
       },
     });
 
-    return res.status(200).json({ ok: true });
-  } catch (err) {
-    console.error('Callback error:', err);   // <— cetak seluruh error & stack
-    return res.status(400).json({ error: (err as Error).message });
+    // 6) Balik sukses
+    return res.status(200).json(createSuccessResponse({ message: 'Callback stored & Order updated' }));
+  } catch (err: any) {
+    logger.error('Callback error:', err.message);
+    return res.status(400).json(createErrorResponse(err.message));
   }
 };
+
+
 /* ═════════ 3. Cek status order ═════════ */
 export const checkPaymentStatus = async (req: Request, res: Response) => {
   try {
