@@ -46,12 +46,20 @@ model transaction_request {
   amount           Int
   status           String
   createdAt        DateTime   @default(now())
+
+  // Tambahan untuk OY! E-Wallet (DANA)
+  paymentProvider  String?    // e.g. "OY_DANA"
+  gatewayCustom    String?    // partner_trx_id dari OY
+  trxId            String?    // trx_id dari OY
+  ewalletUrl       String?    // URL untuk checkout di DANA
+  expiration       Int?       // expiration_time (dalam menit)
+
   settlementAmount Int?
   settlementAt     DateTime?
-  paymentProvider  String?
-  gatewayCustom    String?
-  merchant         merchant   @relation("MerchantTransactionRequests", fields: [merchantId], references: [id])
+
+  merchant merchant   @relation("MerchantTransactionRequests", fields: [merchantId], references: [id])
 }
+
 
 model transaction_response {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId

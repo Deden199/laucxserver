@@ -67,12 +67,18 @@ export const config = {
       merchantId: process.env.GV_MERCHANT_ID || '',
       merchantKey: process.env.GV_MERCHANT_KEY || '',
     },
+    oy: {
+    apiKey: process.env.OY_API_KEY ?? '',
+    username: process.env.OY_USERNAME ?? '',
+    endpoint: {
+      prod:    'https://partner.oyindonesia.com/api/e-wallet-aggregator',
+      staging: 'https://api-stg.oyindonesia.com/api/e-wallet-aggregator'
+    }
+  },
     // Hilogate configuration
     hilogate: {
       // external merchant UUID dari .env
       merchantId: process.env.HILOGATE_MERCHANT_ID || '',
-      merchantSecretKey: process.env.HILOGATE_MERCHANT_SECRET_KEY || '',
-
       // secret key untuk signature
       secretKey:  process.env.HILOGATE_SECRET_KEY  || '',
       // sandbox | live

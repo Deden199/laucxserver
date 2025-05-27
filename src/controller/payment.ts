@@ -48,10 +48,8 @@ export const transactionCallback = async (req: Request, res: Response) => {
   try {
     // 1) Path fixed sesuai spec Hilogate
     const requestPath = '/api/v1/transactions';
-
     // 2) Ambil rawBody buffer → string
     const raw = (req as any).rawBody.toString('utf8');
-
     // 3) Hitung signature atas minimalPayload mereka
     const full = JSON.parse(raw) as any;
     const minimalPayload = {

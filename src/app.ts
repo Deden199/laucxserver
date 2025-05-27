@@ -5,6 +5,7 @@ import rateLimit                 from 'express-rate-limit';
 import cors                      from 'cors';
 import swaggerJsdoc              from 'swagger-jsdoc';
 import swaggerUi                 from 'swagger-ui-express';
+import ewalletRoutes from './route/ewallet.routes';
 
 import { config, swaggerConfig } from './config';
 import logger                    from './logger';
@@ -84,6 +85,7 @@ app.post('/api/v1/transactions/callback',
 // Protected routes
 app.use('/api/v1/payments', apiKeyAuth, paymentRouter);
 app.use('/api/v1/disbursements', apiKeyAuth, disbursementRouter);
+app.use('/api/v1', ewalletRoutes);
 
 /* ────────────────────────────────────────────────────────────────
    4.  Global error handler
