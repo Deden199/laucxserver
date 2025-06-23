@@ -53,7 +53,7 @@ export const createTransaction = async (request: Transaction) => {
         subMerchantId: '',
         buyerId: request.buyer || '',
         amount,
-        status: 'CREATED',
+        status: 'PENDING',
         settlementAmount: amount,
       },
     });
@@ -100,7 +100,7 @@ export const createTransaction = async (request: Transaction) => {
           subMerchantId: '',
           buyerId: request.buyer || '',
           amount,
-          status: 'CREATED',
+          status: 'PENDING',
           settlementAmount: amount,
         },
       });
@@ -165,7 +165,7 @@ export const createTransaction = async (request: Transaction) => {
         subMerchantId,
         buyerId: request.buyer || '',
         amount,
-        status: 'CREATED',
+        status: 'PENDING',
         settlementAmount: Math.floor(amount * (1 - merchant.mdr)),
       },
     });
@@ -342,6 +342,7 @@ if (forced === 'hilogate') {
     data: {
       id:           referenceNo,
       userId:       payload.userId,
+      merchantId:   payload.userId,
       amount:       totalAmount,
       channel:      'hilogate',
       status:       'PENDING',
@@ -377,7 +378,8 @@ const channel = chosen;
     checkoutUrl = await channel.generateCheckoutUrl({ orderId, amount: payload.amount });
   }
   await prisma.order.create({
-    data: { id: orderId, userId: payload.userId, amount: payload.amount, channel: channel.name, status: 'PENDING', qrPayload, checkoutUrl },
+    data: { id: orderId, userId: payload.userId,  merchantId:   payload.userId,
+amount: payload.amount, channel: channel.name, status: 'PENDING', qrPayload, checkoutUrl },
   });
   return { orderId, checkoutUrl, qrPayload };
 };

@@ -9,7 +9,7 @@ export const config = {
     // Base URL with port, used to build callbacks and checkout URLs
     baseUrl: process.env.BASE_URL || `http://localhost:${PORT}`,
     forceProvider: process.env.FORCE_PROVIDER?.trim().toLowerCase() || null,
-
+jwtSecret: process.env.JWT_SECRET || 'default_jwt_secret',
     // Prefix for Swagger server (will point to API v1)
     swaggerUrl:
       process.env.SWAGGER_URL || `http://localhost:${PORT}/api/v1`,

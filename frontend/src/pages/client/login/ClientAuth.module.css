@@ -1,0 +1,48 @@
+/* src/styles/ClientDashboard.module.css */
+
+.container {
+  /* ───────── custom properties ────────── */
+  --primary: #4f46e5;
+  --bg: #f3f4f6;
+  --card-bg: #ffffff;
+  --text: #1f2937;
+  --text-light: #4b5563;
+  --shadow: rgba(0, 0, 0, 0.05);
+
+  /* ───────── layout ────────── */
+  padding: 2rem;
+  background: var(--bg);
+  min-height: 100vh;
+  font-family: 'Inter', sans-serif;
+}
+
+/* kartu statistik */
+.card {
+  background: var(--card-bg);
+  padding: 1.5rem;
+  border-radius: 1rem;
+  box-shadow: 0 4px 16px var(--shadow);
+  flex: 1;
+  min-width: 220px;
+  text-align: center;
+}
+
+.card h2 {
+  font-size: 1rem;
+  color: var(--text-light);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+}
+
+.card p {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+/* wrapper tabel dengan scroll horizontal */
+.tableWrapper {
+  overflow-x: auto;
+}
+
+/* … dst … */

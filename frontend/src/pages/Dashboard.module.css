@@ -1,0 +1,178 @@
+/* src/pages/Dashboard.module.css */
+
+/* ——— LAYOUT DASAR ——— */
+.container {
+  padding: 2rem;
+  background: #f0f2f5;
+  min-height: 100vh;
+  font-family: 'Inter', sans-serif;
+}
+
+.loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  color: #4b5563;
+  font-size: 1.25rem;
+}
+
+/* ——— HEADER ——— */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+.header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+.logoutBtn {
+  padding: 0.5rem 1rem;
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+.logoutBtn:hover {
+  background: #dc2626;
+}
+
+/* ——— GRID STATISTIK ——— */
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 2rem;
+  margin-bottom: 2.5rem;
+}
+
+/* CARD */
+.card {
+  background: linear-gradient(135deg, #ffffff 0%, #e2e8f0 100%);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.05), 0 4px 8px rgba(0,0,0,0.03);
+  transition: transform 0.2s, box-shadow 0.2s;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 28px rgba(0,0,0,0.08), 0 6px 12px rgba(0,0,0,0.05);
+}
+.card h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #4a5568;
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+}
+.card p {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #1a202c;
+  line-height: 1;
+}
+
+/* ——— EXPORT BUTTON (opsional) ——— */
+.exportBtn {
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 0.75rem 1.5rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  transition: background 0.2s, transform 0.2s;
+}
+.exportBtn:hover {
+  background: #1e40af;
+  transform: translateY(-2px);
+}
+
+/* ——— BAGIAN TABEL ——— */
+.tableSection {
+  background: #fff;
+  border-radius: 1rem;
+  padding: 2rem;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.04), 0 4px 8px rgba(0,0,0,0.02);
+  margin-top: 2.5rem;
+
+  /* ▶️  penting untuk scroll horizontal */
+  overflow-x: auto;
+}
+.tableSection h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 1rem;
+}
+
+.table {
+  width: 100%;
+  min-width: 850px;      /* ▶️  biar tidak rusak di mobile */
+  border-collapse: separate;
+  border-spacing: 0;
+  white-space: nowrap;   /* ▶️  teks tidak mem-wrap */
+}
+.table thead tr {
+  background: #edf2f7;
+}
+.table th,
+.table td {
+  padding: 1rem 1.25rem;
+  text-align: left;
+  font-size: 0.875rem;
+  color: #4b5563;
+  border-bottom: 1px solid #e2e8f0;
+}
+.table th {
+  font-weight: 600;
+}
+.table tbody tr:nth-child(even) {
+  background: #f7fafc;
+}
+.table tbody tr:hover {
+  background: #e2e8f0;
+}
+
+/* highlight kolom Net Settle */
+.netSettle {
+  font-weight: 600;
+  color: #15803d;
+}
+
+/* ——— RESPONSIVE ——— */
+@media (max-width: 640px) {
+  .header h1 { font-size: 1.5rem; }
+  .statsGrid { grid-template-columns: 1fr; gap: 1rem; }
+  .card { padding: 1rem; }
+  .card p { font-size: 2rem; }
+  .exportBtn { width: 100%; text-align: center; }
+  .tableSection { padding: 1rem; }
+  .table th, .table td { padding: 0.75rem 1rem; }
+}
+/* ───── scrollable table wrapper ───── */
+/* filter bar  */
+.filters{
+  display:flex; gap:1rem; flex-wrap:wrap; align-items:center; margin-bottom:2rem;
+}
+.filters select,.filters input[type=date],.filters button{
+  padding:0.5rem 0.75rem; font-size:0.875rem; border-radius:0.5rem; border:1px solid #cbd5e1;
+}
+.filters button{ background:#2563eb; color:#fff; border:none; cursor:pointer; }
+.filters button:hover{ background:#1e40af; }
+
+/* table scroll */
+.tableWrapper{
+  overflow-x:auto;
+}
+.ellipsis{
+  max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}

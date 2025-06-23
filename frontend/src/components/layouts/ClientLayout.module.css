@@ -1,0 +1,72 @@
+.container {
+  display: flex;
+  height: 100vh;
+  font-family: 'Inter', sans-serif;
+}
+
+.sidebar {
+  width: 0;
+  overflow: hidden;
+  background: #1f2937;
+  color: white;
+  transition: width 0.2s;
+}
+.sidebar.open {
+  width: 240px;
+}
+.logo {
+  padding: 1.5rem;
+  font-size: 1.25rem;
+  font-weight: bold;
+  text-align: center;
+}
+.navItem {
+  display: block;
+  padding: 0.75rem 1.5rem;
+  color: white;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+.navItem:hover {
+  background: #374151;
+}
+
+.backdrop {
+  display: none;
+}
+.backdropVisible {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: block;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  background: #f9fafb;
+  padding: 1rem;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+}
+.burger {
+  font-size: 1.5rem;
+  background: none;
+  border: none;
+  margin-right: 1rem;
+  cursor: pointer;
+}
+.title {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+.content {
+  padding: 2rem;
+  background: #f3f4f6;
+  overflow-y: auto;
+}

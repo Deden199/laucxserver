@@ -9,6 +9,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// Status untuk disbursement
 enum DisbursementStatus {
   CREATED
   PENDING
@@ -16,51 +17,63 @@ enum DisbursementStatus {
   FAILED
 }
 
+/// Status transaksi
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  WAIT_FOR_SETTLEMENT
+  READY_TO_DISBURSEMENT
+  DISBURSEMENT_SUCCESS
+  FAILED
+}
+
+/// Merchant utama
 model merchant {
   id                    String                  @id @default(auto()) @map("_id") @db.ObjectId
   phoneNumber           String
   name                  String
   email                 String?
   telegram              String?
-  mdr                   Float
+  mdr                   Float                   @default(0.0)
   createdAt             DateTime                @default(now())
+
   subMerchants          sub_merchant[]          @relation("MerchantSubMerchants")
   transactionRequests   transaction_request[]   @relation("MerchantTransactionRequests")
   disbursements         disbursement[]          @relation("MerchantDisbursements")
   disbursement_accounts disbursement_account[]  @relation("MerchantDisbursementAccount")
 }
 
+/// Koneksi PG per merchant, dengan fee
 model sub_merchant {
   id             String   @id @default(auto()) @map("_id") @db.ObjectId
   merchantId     String   @db.ObjectId
   netzMerchantId String
   netzPartnerId  String
+  fee            Float    @default(0.0)
+
   merchant       merchant @relation("MerchantSubMerchants", fields: [merchantId], references: [id])
 }
 
+/// Transaksi
 model transaction_request {
-  id               String     @id @default(auto()) @map("_id") @db.ObjectId
-  merchantId       String     @db.ObjectId
+  id               String            @id @default(auto()) @map("_id") @db.ObjectId
+  merchantId       String?            @db.ObjectId
   subMerchantId    String
   buyerId          String
   amount           Int
-  status           String
-  createdAt        DateTime   @default(now())
-
-  // Tambahan untuk OY! E-Wallet (DANA)
-  paymentProvider  String?    // e.g. "OY_DANA"
-  gatewayCustom    String?    // partner_trx_id dari OY
-  trxId            String?    // trx_id dari OY
-  ewalletUrl       String?    // URL untuk checkout di DANA
-  expiration       Int?       // expiration_time (dalam menit)
-
+  status           TransactionStatus
+  createdAt        DateTime          @default(now())
+  paymentProvider  String?
+  gatewayCustom    String?
+  trxId            String?
+  ewalletUrl       String?
+  expiration       Int?
   settlementAmount Int?
   settlementAt     DateTime?
-
-  merchant merchant   @relation("MerchantTransactionRequests", fields: [merchantId], references: [id])
+  merchant merchant? @relation("MerchantTransactionRequests", fields: [merchantId], references: [id])
 }
 
-
+/// Simpan response mentah dari gateway
 model transaction_response {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
   referenceId   String   @db.ObjectId
@@ -68,6 +81,7 @@ model transaction_response {
   createdAt     DateTime @default(now())
 }
 
+/// Callback masuk dari gateway
 model transaction_callback {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
   referenceId   String?  @db.ObjectId
@@ -75,6 +89,7 @@ model transaction_callback {
   createdAt     DateTime @default(now())
 }
 
+/// Callback disbursement
 model disbursement_callback {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
   referenceId   String?  @db.ObjectId
@@ -82,26 +97,30 @@ model disbursement_callback {
   createdAt     DateTime @default(now())
 }
 
-model disbursement {
-  id            String            @id @default(auto()) @map("_id") @db.ObjectId
-  merchantId    String            @db.ObjectId
-  amount        BigInt            @map("amount")
-  createdAt     DateTime          @map("createdAt")
-  beneficiary   Beneficiary
-  totalAmount   BigInt            @map("totalAmount")
-  transferFee   BigInt            @map("transferFee")
-  status        DisbursementStatus
-  merchant      merchant          @relation("MerchantDisbursements", fields: [merchantId], references: [id])
-
-  @@map("disbursement")
-}
-
+/// Beneficiary untuk disbursement
 type Beneficiary {
   accountName   String
   accountNumber String
   bankCode      String
 }
 
+/// Disbursement
+model disbursement {
+  id            String            @id @default(auto()) @map("_id") @db.ObjectId
+  merchantId    String            @db.ObjectId
+  amount        BigInt
+  transferFee   BigInt
+  totalAmount   BigInt
+  beneficiary   Beneficiary
+  status        DisbursementStatus
+  createdAt     DateTime          @default(now())
+
+  merchant merchant @relation("MerchantDisbursements", fields: [merchantId], references: [id])
+
+  @@map("disbursement")
+}
+
+/// Settlement record
 model settlement {
   id             String   @id @default(auto()) @map("_id") @db.ObjectId
   transactionId  String   @db.ObjectId
@@ -111,29 +130,39 @@ model settlement {
   @@map("settlement")
 }
 
+/// Rekening untuk disburse
 model disbursement_account {
   id          String    @id @default(auto()) @map("_id") @db.ObjectId
   merchantId  String    @db.ObjectId
   accountNo   String
   bankCode    String
   accountName String
+
   merchant    merchant  @relation("MerchantDisbursementAccount", fields: [merchantId], references: [id])
 
   @@map("disbursement_account")
 }
 
 model Order {
-  id          String   @id @default(uuid()) @map("_id")
-  userId      String
-  amount      Float
-  channel     String
-  status      String   @default("PENDING")
-  qrPayload   String?
-  checkoutUrl String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String   @id @default(uuid()) @map("_id")
+  userId           String   // ID pembeli (buyer)
+  merchantId       String?   
+  amount           Float
+  channel          String
+  settlementStatus String?
+  status           String   @default("PENDING")
+  pendingAmount    Float?   // setelah SUCCESS sebelum payout
+  settlementAmount Float?   // net_amount setelah payout
+  fee3rdParty      Float?   // payment_gateway_fee
+  feeLauncx        Float?   // platform fee
+  qrPayload        String?
+  checkoutUrl      String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
+
+/// PartnerUser untuk login human
 model PartnerUser {
   id        String   @id @default(uuid()) @map("_id")
   name      String
@@ -145,6 +174,7 @@ model PartnerUser {
   updatedAt DateTime @updatedAt
 }
 
+/// Key‐value settings
 model Setting {
   id        String   @id @default(uuid()) @map("_id")
   key       String   @unique
@@ -152,11 +182,59 @@ model Setting {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+/// Payment Gateway providers
+model PGProvider {
+  id           String      @id @default(uuid()) @map("_id")
+  name         String      @unique
+  credentials  Json
+  clientPG     ClientPG[]  @relation("ClientToPG")
+}
+
+/// API‐clients yang mengakses aggregator kita
 model PartnerClient {
-  id        String   @id @default(uuid()) @map("_id")
+  id         String      @id @default(uuid()) @map("_id")
   name       String
-  apiKey     String   @unique
+  apiKey     String      @unique
   apiSecret  String
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
+  isActive   Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+  clientPG   ClientPG[]  @relation("ClientToPG")
+  // relations ke client‐user & balance/withdraw
+  users      ClientUser[]
+  balance    Float       @default(0.0)    // saldo aktif
+  withdraws  WithdrawRequest[]
+  
+}
+
+model ClientUser {
+  id               String       @id @default(uuid()) @map("_id")
+  partnerClientId  String       @map("partnerClientId")
+  email            String       @unique
+  password         String
+  role             String       @default("PARTNER_CLIENT")
+  isActive         Boolean      @default(true)
+  partnerClient    PartnerClient @relation(fields: [partnerClientId], references: [id])
+}
+
+model WithdrawRequest {
+  id              String      @id @default(uuid()) @map("_id")
+  partnerClientId String      @map("partnerClientId")
+  amount          Float
+  status          String      @default("PENDING")
+  createdAt       DateTime    @default(now())
+  partnerClient   PartnerClient @relation(fields: [partnerClientId], references: [id])
+}
+/// Junction table: satu API‐client bisa connect ke banyak PG,
+/// dengan fee khusus dan hari‐hari aktif
+model ClientPG {
+  id            String         @id @default(uuid()) @map("_id")
+  client        PartnerClient  @relation("ClientToPG", fields: [clientId],    references: [id])
+  clientId      String         @map("clientId")
+  pgProvider    PGProvider     @relation("ClientToPG", fields: [pgProviderId], references: [id])
+  pgProviderId  String         @map("pgProviderId")
+  clientFee     Float
+  activeDays    String[]       @default([])   // e.g. ["MONDAY","TUESDAY"]
+
+  @@unique([clientId, pgProviderId])
 }

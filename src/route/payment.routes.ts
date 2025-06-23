@@ -1,6 +1,7 @@
 /* ─────────────────── src/route/payment.routes.ts ─────────────────── */
 import { Router } from 'express';
 import paymentController from '../controller/payment';
+import apiKeyAuth from '../middleware/apiKeyAuth'
 
 const paymentRouter = Router();
 
@@ -21,7 +22,7 @@ const paymentRouter = Router();
  *       201:
  *         description: Order created
  */
-paymentRouter.post('/create-order', paymentController.createOrder);
+paymentRouter.post('/create-order',apiKeyAuth, paymentController.createOrder);
 
 /* ─── 2. Create Transaction (direct) ───────────────────────────────── */
 /**
