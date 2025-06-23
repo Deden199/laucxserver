@@ -21,10 +21,9 @@ export async function getClientDashboard(req: ClientAuthRequest, res: Response) 
   // 2) Parse filter tanggal opsional
   const dateFrom = req.query.date_from ? new Date(String(req.query.date_from)) : undefined
   const dateTo   = req.query.date_to   ? new Date(String(req.query.date_to))   : undefined
-  const dateFilter = {
-    ...(dateFrom && { gte: dateFrom }),
-    ...(dateTo   && { lte: dateTo   })
-  }
+  const createdAtFilter: any = {}
+  if (dateFrom) createdAtFilter.gte = dateFrom
+  if (dateTo)   createdAtFilter.lte = dateTo
 
   // 3a) Hitung total pending settlement
   const pendingAgg = await prisma.order.aggregate({
@@ -32,19 +31,19 @@ export async function getClientDashboard(req: ClientAuthRequest, res: Response) 
     where: {
       merchantId: pc.id,
       status:     'PENDING_SETTLEMENT',
-      ...(dateFrom || dateTo ? { createdAt: dateFilter } : {})
+      ...(dateFrom||dateTo ? { createdAt: createdAtFilter } : {})
     }
   })
   const totalPending = pendingAgg._sum.pendingAmount ?? 0
 
-  // 3b) Ambil semua order yang sudah settled/success/done
+  // 3b) Ambil semua order termasuk PENDING_SETTLEMENT
   const orders = await prisma.order.findMany({
     where: {
       merchantId: pc.id,
       status: {
-        in: ['SUCCESS', 'DONE', 'SETTLED']
+        in: ['SUCCESS', 'DONE', 'SETTLED', 'PENDING_SETTLEMENT']
       },
-      ...(dateFrom || dateTo ? { createdAt: dateFilter } : {})
+      ...(dateFrom||dateTo ? { createdAt: createdAtFilter } : {})
     },
     orderBy: { createdAt: 'desc' },
     select: {
@@ -53,27 +52,37 @@ export async function getClientDashboard(req: ClientAuthRequest, res: Response) 
       amount:           true,
       feeLauncx:        true,
       settlementAmount: true,
+      pendingAmount:    true,  // <- pastikan ini ada
       status:           true,
       createdAt:        true
     }
   })
 
-  // 4) Ringkasan total transaksi
-  const totalTransaksi = orders.reduce((sum, o) => sum + o.amount, 0)
+  // 4) Ringkasan total transaksi (kecuali yang pending settlement)
+  const totalTransaksi = orders
+    .filter(o => o.status !== 'PENDING_SETTLEMENT')
+    .reduce((sum, o) => sum + o.amount, 0)
 
   // 5) Bentuk payload response
-  const transactions = orders.map(o => ({
-    id:        o.id,
-    date:      o.createdAt.toISOString(),
-    reference: o.qrPayload ?? '',
-    amount:    o.amount,
-    feeLauncx: o.feeLauncx ?? 0,
-    netSettle: (o.settlementAmount ?? o.amount) - (o.feeLauncx ?? 0),
-    status:    o.status
-  }))
+  const transactions = orders.map(o => {
+    const netSettle = o.status === 'PENDING_SETTLEMENT'
+      ? (o.pendingAmount ?? 0) - (o.feeLauncx ?? 0)
+      : ((o.settlementAmount ?? o.amount) - (o.feeLauncx ?? 0))
 
+    return {
+      id:        o.id,
+      date:      o.createdAt.toISOString(),
+      reference: o.qrPayload ?? '',
+      amount:    o.amount,
+      feeLauncx: o.feeLauncx ?? 0,
+      netSettle,
+      status:    o.status
+    }
+  })
+
+  // 6) Return JSON
   return res.json({
-    balance:         pc.balance,
+    balance:        pc.balance,
     totalTransaksi,
     totalPending,
     transactions
@@ -83,34 +92,33 @@ export async function getClientDashboard(req: ClientAuthRequest, res: Response) 
 
 /**
  * GET /api/v1/client/dashboard/export
- * – export semua transaksi SUCCESS, DONE, SETTLED ke Excel
+ * – export semua transaksi SUCCESS, DONE, SETTLED, PENDING_SETTLEMENT ke Excel
  */
 export async function exportClientTransactions(req: ClientAuthRequest, res: Response) {
   const user = await prisma.clientUser.findUnique({
     where: { id: req.clientUserId! },
     include: { partnerClient: true }
   })
-  if (!user) return res.status(404).json({ error: 'User not found' })
+  if (!user) return res.status(404).json({ error: 'User tidak ditemukan' })
   const pcId = user.partnerClient.id
 
   const orders = await prisma.order.findMany({
     where: {
       merchantId: pcId,
-      status: { in: ['SUCCESS', 'DONE', 'SETTLED'] }
+      status: { in: ['SUCCESS', 'DONE', 'SETTLED', 'PENDING_SETTLEMENT'] }
     },
     orderBy: { createdAt: 'desc' },
     select: {
+      createdAt:        true,
       id:               true,
       amount:           true,
       pendingAmount:    true,
       settlementAmount: true,
       feeLauncx:        true,
-      status:           true,
-      createdAt:        true,
+      status:           true
     }
   })
 
-  // Buat Excel
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Transactions')
   ws.columns = [
@@ -120,33 +128,25 @@ export async function exportClientTransactions(req: ClientAuthRequest, res: Resp
     { header: 'Pending', key: 'pendingAmount',   width: 15 },
     { header: 'Settled', key: 'settlementAmount',width: 15 },
     { header: 'Fee',     key: 'feeLauncx',       width: 15 },
-    { header: 'Status',  key: 'status',          width: 12 },
+    { header: 'Status',  key: 'status',          width: 16 },
   ]
   orders.forEach(o => {
     ws.addRow({
       date:             o.createdAt.toISOString(),
       id:               o.id,
       amount:           o.amount,
-      pendingAmount:    o.pendingAmount  ?? 0,
+      pendingAmount:    o.pendingAmount ?? 0,
       settlementAmount: o.settlementAmount ?? 0,
-      feeLauncx:        o.feeLauncx      ?? 0,
+      feeLauncx:        o.feeLauncx ?? 0,
       status:           o.status
     })
   })
 
-  res.setHeader(
-    'Content-Disposition',
-    'attachment; filename=client-transactions.xlsx'
-  )
-  res.setHeader(
-    'Content-Type',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-  )
+  res.setHeader('Content-Disposition', 'attachment; filename=client-transactions.xlsx')
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
   await wb.xlsx.write(res)
   res.end()
 }
-
-
 /**
  * POST /api/v1/client/dashboard/withdraw
  */
