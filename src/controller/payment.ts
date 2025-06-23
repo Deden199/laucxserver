@@ -34,51 +34,57 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
   }
 }
 
-export const transactionCallback = async (req: AuthRequest, res: Response) => {
+export const transactionCallback = async (req: Request, res: Response) => {
+  let rawBody: string
+
   try {
-    const path    = '/api/v1/transactions/callback';
-    const rawBody = (req as any).rawBody.toString('utf8');
-    const payload = JSON.parse(rawBody);
+    const requestPath = '/api/v1/transactions';
 
-    // Signature MD5 ala Hilogate
-    const minimal  = JSON.stringify({
-      ref_id: payload.ref_id,
-      amount: payload.amount,
-      method: payload.method
-    });
-    const expected = crypto
-      .createHash('md5')
-      .update(path + minimal + config.api.hilogate.secretKey, 'utf8')
-      .digest('hex');
-    const got = req.header('X-Signature') || req.header('x-signature') || '';
-    if (got !== expected) throw new Error('Invalid signature');
+    rawBody = (req as any).rawBody.toString('utf8')
+    logger.debug('[Callback] rawBody:', rawBody)
 
-    // Simpan raw callback untuk idempotensi
-    await paymentService.transactionCallback(req);
+    // 3) Hitung dan verifikasi signature
+    const full = JSON.parse(rawBody) as any
+    const minimalPayload = JSON.stringify({
+      ref_id: full.ref_id,
+      amount: full.amount,
+      method: full.method
+    })
+    const signaturePayload = requestPath + minimalPayload + config.api.hilogate.secretKey
+    const expected = crypto.createHash('md5')
+      .update(signaturePayload, 'utf8')
+      .digest('hex')
+    const got = req.header('X-Signature') || req.header('x-signature') || ''
+    logger.debug('[Callback] signature got=', got, ' expected=', expected)
+    if (got !== expected) throw new Error(`Invalid Hilogate signature: got=${got}`)
 
-    // Extract langsung dari root payload
+    // 4) Simpan raw callback untuk idempotensi
+    await paymentService.transactionCallback(req)
+
+    // 5) Extract field dari root payload
     const {
       ref_id: orderId,
       status: pgStatus,
       net_amount,
       payment_gateway_fee = 0,
-      fee                 = 0,
+      fee = 0,
       qr_string,
       settlement_status
-    } = payload;
+    } = full
 
-    if (!orderId)           throw new Error('Missing ref_id');
-    if (net_amount == null) throw new Error('Missing net_amount');
+    if (!orderId) throw new Error('Missing ref_id')
+    if (net_amount == null) throw new Error('Missing net_amount')
 
-    const isInitialSuccess = ['SUCCESS','DONE'].includes(pgStatus.toUpperCase());
-    const newStatus        = isInitialSuccess ? 'PENDING_SETTLEMENT' : pgStatus.toUpperCase();
-    const newSettlementSt  = settlement_status?.toUpperCase()
-                              ?? (isInitialSuccess ? 'PENDING' : null);
+    // 6) Hitung status dan settlement fields
+    const isInitialSuccess = ['SUCCESS','DONE'].includes(pgStatus.toUpperCase())
+    const newStatus        = isInitialSuccess ? 'PENDING_SETTLEMENT' : pgStatus.toUpperCase()
+    const newSettlementSt  = settlement_status?.toUpperCase() ?? (isInitialSuccess ? 'PENDING' : null)
 
+    // 7) Update order di database
     await prisma.order.update({
       where: { id: orderId },
       data: {
-        merchantId:       req.userId!,
+        merchantId:       full.merchant_id ?? undefined,
         status:           newStatus,
         settlementStatus: newSettlementSt,
         amount:           net_amount,
@@ -87,18 +93,27 @@ export const transactionCallback = async (req: AuthRequest, res: Response) => {
         fee3rdParty:      payment_gateway_fee,
         feeLauncx:        fee,
         qrPayload:        qr_string ?? null,
-        updatedAt:        new Date(),
-      },
-    });
+        updatedAt:        new Date()
+      }
+    })
 
-    return res.status(200).json(createSuccessResponse({ message: 'OK' }));
+    // 8) Balik sukses ke Hilogate
+    return res
+      .status(200)
+      .json(createSuccessResponse({ message: 'OK' }))
+
   } catch (err: any) {
-    logger.error('Callback error:', err.message);
-    return res.status(400).json(createErrorResponse(err.message));
+    // log lengkap
+    logger.error('[Callback] Error processing transaction:', err)
+    // debug raw body jika parse gagal
+    if (rawBody && !err.message.startsWith('Invalid Hilogate signature')) {
+      logger.debug('[Callback] rawBody on error:', rawBody)
+    }
+    return res
+      .status(400)
+      .json(createErrorResponse(err.message || 'Unknown error'))
   }
 }
-
-
 
 /* ═════════════════ 3. Inquiry status ═════════════════ */
 export const checkPaymentStatus = async (req: AuthRequest, res: Response) => {
