@@ -1,14 +1,14 @@
-// src/pages/client/login.tsx
 'use client'
+
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import apiClient from '@/lib/apiClient'
-import styles    from './ClientAuth.module.css'
+import styles from './ClientAuth.module.css'
 
 export default function LoginForm() {
-  const [email, setEmail]       = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [err, setErr]           = useState('')
+  const [err, setErr] = useState('')
   const router = useRouter()
 
   async function handleSubmit(e: React.FormEvent) {
@@ -25,8 +25,10 @@ export default function LoginForm() {
   return (
     <div className={styles.container}>
       <div className={styles.card}>
-        <h1>Partner Client Login</h1>
+        <h1 className={styles.title}>Client Login</h1>
+
         {err && <div className={styles.error}>{err}</div>}
+
         <form onSubmit={handleSubmit} className={styles.form}>
           <input
             className={styles.input}
@@ -36,6 +38,7 @@ export default function LoginForm() {
             onChange={e => setEmail(e.target.value)}
             required
           />
+
           <input
             className={styles.input}
             type="password"
@@ -44,7 +47,8 @@ export default function LoginForm() {
             onChange={e => setPassword(e.target.value)}
             required
           />
-          <button type="submit" className={styles.btn}>
+
+          <button type="submit" className={styles.button}>
             Login
           </button>
         </form>

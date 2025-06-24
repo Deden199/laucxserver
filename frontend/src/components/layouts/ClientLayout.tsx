@@ -28,14 +28,16 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
 
   return (
     <div className={styles.container}>
-      <motion.aside
-        className={styles.sidebar}
-        animate={{ width: open ? 240 : 72 }}
-        transition={{ type: 'spring', stiffness: 300 }}
-      >
+<motion.aside
+  className={styles.sidebar}
+  initial={{ width: open ? 72 : 240 }}
+  animate={{ width: open ? 240 : 72, opacity: open ? 1 : 0.95 }}
+  transition={{ ease: 'easeInOut', duration: 0.3 }}
+>
+
         <div className={styles.logo}>
           <span className={styles.logoIcon}>🌐</span>
-          {open && <span className={styles.logoText}>Client Portal</span>}
+          {open && <span className={styles.logoText}>PORTAL</span>}
         </div>
 
         <nav className={styles.nav}>

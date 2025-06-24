@@ -1,48 +1,70 @@
-/* src/styles/ClientDashboard.module.css */
-
 .container {
-  /* ───────── custom properties ────────── */
-  --primary: #4f46e5;
-  --bg: #f3f4f6;
-  --card-bg: #ffffff;
-  --text: #1f2937;
-  --text-light: #4b5563;
-  --shadow: rgba(0, 0, 0, 0.05);
-
-  /* ───────── layout ────────── */
-  padding: 2rem;
-  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-height: 100vh;
-  font-family: 'Inter', sans-serif;
+  background-color: #f3f4f6;
 }
 
-/* kartu statistik */
 .card {
-  background: var(--card-bg);
-  padding: 1.5rem;
-  border-radius: 1rem;
-  box-shadow: 0 4px 16px var(--shadow);
-  flex: 1;
-  min-width: 220px;
+  width: 100%;
+  max-width: 380px;
+  background-color: #ffffff;
+  padding: 32px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.title {
+  font-size: 1.5rem;
+  font-weight: 600;
   text-align: center;
+  margin-bottom: 24px;
+  color: #111827;
 }
 
-.card h2 {
+.error {
+  background-color: #fee2e2;
+  color: #b91c1c;
+  padding: 8px;
+  border-radius: 6px;
+  text-align: center;
+  margin-bottom: 16px;
+  font-size: 0.875rem;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.input {
+  padding: 12px;
   font-size: 1rem;
-  color: var(--text-light);
-  margin-bottom: 0.5rem;
-  text-transform: uppercase;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  transition: border-color 0.2s ease;
 }
 
-.card p {
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--primary);
+.input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
 }
 
-/* wrapper tabel dengan scroll horizontal */
-.tableWrapper {
-  overflow-x: auto;
+.button {
+  padding: 12px;
+  font-size: 1rem;
+  font-weight: 500;
+  background-color: #3b82f6;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
 }
 
-/* … dst … */
+.button:hover {
+  background-color: #2563eb;
+}

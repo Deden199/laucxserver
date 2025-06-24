@@ -19,14 +19,14 @@ export async function getClientDashboard(req: ClientAuthRequest, res: Response) 
   if (!user) return res.status(404).json({ error: 'User tidak ditemukan' })
   const pc = user.partnerClient
 
-  // 2) Parse filter tanggal opsional
+  // 2) Parse filter tanggal
   const dateFrom = req.query.date_from ? new Date(String(req.query.date_from)) : undefined
   const dateTo   = req.query.date_to   ? new Date(String(req.query.date_to))   : undefined
   const createdAtFilter: any = {}
   if (dateFrom) createdAtFilter.gte = dateFrom
   if (dateTo)   createdAtFilter.lte = dateTo
 
-  // 3a) Hitung total pending settlement
+  // 3a) Total pending settlement
   const pendingAgg = await prisma.order.aggregate({
     _sum: { pendingAmount: true },
     where: {
@@ -37,7 +37,7 @@ export async function getClientDashboard(req: ClientAuthRequest, res: Response) 
   })
   const totalPending = pendingAgg._sum.pendingAmount ?? 0
 
-  // 3b) Ambil semua order termasuk PENDING_SETTLEMENT
+  // 3b) Ambil semua order relevant
   const orders = await prisma.order.findMany({
     where: {
       merchantId: pc.id,
@@ -53,35 +53,42 @@ export async function getClientDashboard(req: ClientAuthRequest, res: Response) 
       amount:           true,
       feeLauncx:        true,
       settlementAmount: true,
-      pendingAmount:    true,  // <- pastikan ini ada
+      pendingAmount:    true,
       status:           true,
       createdAt:        true
     }
   })
 
-  // 4) Ringkasan total transaksi (kecuali yang pending settlement)
+  // 4) Total transaksi (excl. pending)
   const totalTransaksi = orders
     .filter(o => o.status !== 'PENDING_SETTLEMENT')
     .reduce((sum, o) => sum + o.amount, 0)
 
-  // 5) Bentuk payload response
+  // 5) Map ke payload
   const transactions = orders.map(o => {
     const netSettle = o.status === 'PENDING_SETTLEMENT'
       ? (o.pendingAmount ?? 0) - (o.feeLauncx ?? 0)
       : ((o.settlementAmount ?? o.amount) - (o.feeLauncx ?? 0))
 
+    // map status hanya SUCCESS/DONE
+    const mappedStatus = o.status === 'DONE'
+      ? 'DONE'
+      : 'SUCCESS'
+
     return {
-      id:        o.id,
-      date:      o.createdAt.toISOString(),
-      reference: o.qrPayload ?? '',
-      amount:    o.amount,
-      feeLauncx: o.feeLauncx ?? 0,
+      id:               o.id,
+      date:             o.createdAt.toISOString(),
+      reference:        o.qrPayload ?? '',
+      amount:           o.amount,
+      feeLauncx:        o.feeLauncx ?? 0,
       netSettle,
-      status:    o.status
+      // kirim settlementStatus asli
+      settlementStatus: o.status,
+      status:           mappedStatus
     }
   })
 
-  // 6) Return JSON
+  // 6) Return
   return res.json({
     balance:        pc.balance,
     totalTransaksi,
@@ -89,7 +96,6 @@ export async function getClientDashboard(req: ClientAuthRequest, res: Response) 
     transactions
   })
 }
-
 
 /**
  * GET /api/v1/client/dashboard/export
