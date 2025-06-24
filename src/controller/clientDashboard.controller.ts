@@ -1,5 +1,6 @@
 import { Response } from 'express'
 import { prisma } from '../core/prisma'
+import hilogateClient from '../service/hilogateClient'
 import { ClientAuthRequest } from '../middleware/clientAuth'
 import ExcelJS from 'exceljs'
 
@@ -150,27 +151,85 @@ export async function exportClientTransactions(req: ClientAuthRequest, res: Resp
 /**
  * POST /api/v1/client/dashboard/withdraw
  */
-export async function requestWithdraw(req: ClientAuthRequest, res: Response) {
-  const { amount } = req.body as { amount: number }
-  const user = await prisma.clientUser.findUnique({
-    where: { id: req.clientUserId! },
-    include: { partnerClient: true }
-  })
-  if (!user) return res.status(404).json({ error: 'User not found' })
-  const pc = user.partnerClient
-
-  if (amount > pc.balance) {
-    return res.status(400).json({ error: 'Insufficient balance' })
+export async function validateAccount(req: ClientAuthRequest, res: Response) {
+  const { account_number, bank_code } = req.body
+  try {
+    const result = await hilogateClient.validateAccount(account_number, bank_code)
+    // Kirim data validasi ke klien
+    return res.json(result.data)
+  } catch (err: any) {
+    return res.status(400).json({ message: err.message || 'Validasi akun gagal' })
+  }
+}
+export const requestWithdraw = async (req: ClientAuthRequest, res: Response) => {
+  const { account_name, account_name_alias, account_number, bank_code, bank_name, branch_name, amount } = req.body;
+  const pc = await prisma.partnerClient.findUnique({ where: { id: (req as any).partnerClientId } });
+  
+  // 1) Periksa saldo aktif
+  if (!pc || amount > pc.balance) {
+    return res.status(400).json({ error: 'Insufficient balance' });
   }
 
-  // buat request & deduct
+  // 2) Validasi rekening via Hilogate
+  try {
+    const valid = await hilogateClient.validateAccount(account_number, bank_code);
+    if (!valid.data.data.is_valid) throw new Error('Invalid account');
+  } catch (e: any) {
+    return res.status(400).json({ error: e.message || 'Account validation failed' });
+  }
+
+  // 3) Buat record withdraw di DB (PENDING) + hold saldo
   const wr = await prisma.withdrawRequest.create({
-    data: { partnerClientId: pc.id, amount }
-  })
+    data: {
+      refId: `wd-${Date.now()}`,
+      partnerClientId: pc.id,
+      accountName: account_name,
+      accountNameAlias: account_name_alias,
+      accountNumber: account_number,
+      bankCode: bank_code,
+      bankName: bank_name,
+      branchName: branch_name,
+      amount,
+      status: 'PENDING',
+    },
+  });
   await prisma.partnerClient.update({
     where: { id: pc.id },
-    data: { balance: { decrement: amount } }
-  })
+    data: { balance: { decrement: amount } },
+  });
 
-  return res.status(201).json({ id: wr.id, status: wr.status })
-}
+  // 4) Kirim request ke Hilogate
+  try {
+    const hg = await hilogateClient.initiateDisbursement({
+      ref_id: wr.refId,
+      amount,
+      beneficiary: {
+        account_number,
+        account_name,
+        bank_code,
+      },
+    });
+    // update paymentGatewayId & transfer flag
+    await prisma.withdrawRequest.update({
+      where: { refId: wr.refId },
+      data: {
+        paymentGatewayId: hg.data.data.id,
+        isTransferProcess: hg.data.data.is_transfer_process,
+        status: 'PENDING',
+      },
+    });
+  } catch (e: any) {
+    // jika gagal panggilan API, kembalikan saldo
+    await prisma.partnerClient.update({
+      where: { id: pc.id },
+      data: { balance: { increment: amount } },
+    });
+    await prisma.withdrawRequest.update({
+      where: { refId: wr.refId },
+      data: { status: 'FAILED' },
+    });
+    return res.status(500).json({ error: 'Disbursement init failed' });
+  }
+
+  return res.status(201).json({ id: wr.id, status: wr.status });
+};

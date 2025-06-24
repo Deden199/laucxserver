@@ -57,7 +57,7 @@ model sub_merchant {
 /// Transaksi
 model transaction_request {
   id               String            @id @default(auto()) @map("_id") @db.ObjectId
-  merchantId       String?            @db.ObjectId
+  merchantId       String?           @db.ObjectId
   subMerchantId    String
   buyerId          String
   amount           Int
@@ -70,7 +70,7 @@ model transaction_request {
   expiration       Int?
   settlementAmount Int?
   settlementAt     DateTime?
-  merchant merchant? @relation("MerchantTransactionRequests", fields: [merchantId], references: [id])
+  merchant         merchant?         @relation("MerchantTransactionRequests", fields: [merchantId], references: [id])
 }
 
 /// Simpan response mentah dari gateway
@@ -115,7 +115,7 @@ model disbursement {
   status        DisbursementStatus
   createdAt     DateTime          @default(now())
 
-  merchant merchant @relation("MerchantDisbursements", fields: [merchantId], references: [id])
+  merchant      merchant          @relation("MerchantDisbursements", fields: [merchantId], references: [id])
 
   @@map("disbursement")
 }
@@ -146,7 +146,7 @@ model disbursement_account {
 model Order {
   id               String   @id @default(uuid()) @map("_id")
   userId           String   // ID pembeli (buyer)
-  merchantId       String?   
+  merchantId       String?
   amount           Float
   channel          String
   settlementStatus String?
@@ -160,7 +160,6 @@ model Order {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
-
 
 /// PartnerUser untuk login human
 model PartnerUser {
@@ -193,38 +192,50 @@ model PGProvider {
 
 /// API‐clients yang mengakses aggregator kita
 model PartnerClient {
-  id         String      @id @default(uuid()) @map("_id")
+  id         String              @id @default(uuid()) @map("_id")
   name       String
-  apiKey     String      @unique
+  apiKey     String              @unique
   apiSecret  String
-  isActive   Boolean     @default(true)
-  createdAt  DateTime    @default(now())
-  clientPG   ClientPG[]  @relation("ClientToPG")
-  // relations ke client‐user & balance/withdraw
+  isActive   Boolean             @default(true)
+  createdAt  DateTime            @default(now())
+  clientPG   ClientPG[]          @relation("ClientToPG")
   users      ClientUser[]
-  balance    Float       @default(0.0)    // saldo aktif
-  withdraws  WithdrawRequest[]
-  
+  balance    Float               @default(0.0)    // saldo aktif
+  withdraws  WithdrawRequest[]  
 }
 
 model ClientUser {
-  id               String       @id @default(uuid()) @map("_id")
-  partnerClientId  String       @map("partnerClientId")
-  email            String       @unique
+  id               String         @id @default(uuid()) @map("_id")
+  partnerClientId  String         @map("partnerClientId")
+  email            String         @unique
   password         String
-  role             String       @default("PARTNER_CLIENT")
-  isActive         Boolean      @default(true)
-  partnerClient    PartnerClient @relation(fields: [partnerClientId], references: [id])
+  role             String         @default("PARTNER_CLIENT")
+  isActive         Boolean        @default(true)
+  partnerClient    PartnerClient  @relation(fields: [partnerClientId], references: [id])
 }
 
 model WithdrawRequest {
-  id              String      @id @default(uuid()) @map("_id")
-  partnerClientId String      @map("partnerClientId")
-  amount          Float
-  status          String      @default("PENDING")
-  createdAt       DateTime    @default(now())
-  partnerClient   PartnerClient @relation(fields: [partnerClientId], references: [id])
+  id                   String              @id @default(uuid()) @map("_id")
+  refId                String              @unique
+  partnerClientId      String              @map("partnerClientId")
+  accountName          String
+  accountNameAlias     String
+  accountNumber        String
+  bankCode             String
+  bankName             String
+  branchName           String?
+  amount               Float
+  netAmount            Float?
+  paymentGatewayId     String?
+  isTransferProcess    Boolean?            @default(false)
+  status               DisbursementStatus  @default(PENDING)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  completedAt          DateTime?
+
+  partnerClient        PartnerClient       @relation(fields: [partnerClientId], references: [id])
 }
+
 /// Junction table: satu API‐client bisa connect ke banyak PG,
 /// dengan fee khusus dan hari‐hari aktif
 model ClientPG {

@@ -1,4 +1,4 @@
-// src/core/hilogateClient.ts
+// File: src/core/hilogateClient.ts
 import axios from 'axios';
 import crypto from 'crypto';
 import { config } from '../config';
@@ -31,6 +31,11 @@ class HilogateClient {
       .update(rawBody + this.secretKey)
       .digest('hex');
     return expected === signature;
+  }
+
+  /** Validasi rekening bank */
+  public async validateAccount(account_number: string, bank_code: string): Promise<any> {
+    return this.request('post', '/api/v1/bank-accounts/validate', { account_number, bank_code });
   }
 
   /** Internal request helper */

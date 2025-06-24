@@ -1,5 +1,5 @@
-// src/route/client/web.routes.ts
-import { Router } from 'express'
+// File: src/route/client/web.routes.ts
+import express, { Router } from 'express'
 import {
   clientRegister,
   clientLogin
@@ -10,8 +10,13 @@ import {
 import {
   getClientDashboard,
   exportClientTransactions,
-  requestWithdraw
-} from '../../controller/clientDashboard.controller'  // pastikan path ini sesuai
+  requestWithdraw,
+  validateAccount // import validateAccount
+} from '../../controller/clientDashboard.controller'
+import {
+  listWithdrawals,
+  retryWithdrawal
+} from '../../controller/withdrawals.controller' // import list & retry
 
 const r = Router()
 
@@ -28,7 +33,16 @@ r.get ('/dashboard',         getClientDashboard)
 // 2.b) Export Excel
 r.get ('/dashboard/export',  exportClientTransactions)
 
-// 2.c) Request withdraw
+// 2.c) Request withdraw via dashboard endpoint
 r.post('/dashboard/withdraw', requestWithdraw)
+
+// 2.d) Validasi rekening bank client
+r.post('/withdrawals/validate-account', express.json(), validateAccount)
+
+// 2.e) List semua withdrawal milik client
+r.get ('/withdrawals', listWithdrawals)
+
+// 2.f) Retry withdrawal yang gagal (optional)
+r.post('/withdrawals/:id/retry', retryWithdrawal)
 
 export default r

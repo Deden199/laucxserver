@@ -34,7 +34,6 @@ export default function ClientDashboardPage() {
       .catch(() => alert('Gagal menyalin'))
   }
 
-  // Build query params based on current range
   function buildParams() {
     const params: any = {}
     if (range === 'today') {
@@ -60,14 +59,12 @@ export default function ClientDashboardPage() {
         totalTransaksi:  number
         totalPending:    number
         transactions:    Tx[]
-      }>('/client/dashboard', {
-        params: buildParams()
-      })
+      }>('/client/dashboard', { params: buildParams() })
 
       setBalance(data.balance)
-      setTotalTrans(data.totalTransaksi)
       setTotalPend(data.totalPending)
       setTxs(data.transactions)
+      setTotalTrans(data.transactions.length)
     } catch {
       router.push('/client/login')
     } finally {
@@ -103,18 +100,19 @@ export default function ClientDashboardPage() {
 
   useEffect(() => { fetchData() }, [range])
 
-  // filter by TRX ID or reference
   const filtered = txs.filter(t =>
-    t.id.toLowerCase().includes(search.toLowerCase())
-    || t.reference.toLowerCase().includes(search.toLowerCase())
+    t.id.toLowerCase().includes(search.toLowerCase()) ||
+    t.reference.toLowerCase().includes(search.toLowerCase())
   )
 
-  if (loading) return <div className={styles.loader}>Loading…</div>
+  if (loading) {
+    return <div className={styles.loader}>Loading…</div>
+  }
 
   return (
     <div className={styles.container}>
       <header className={styles.header}>
-        <h1>Partner Dashboard</h1>
+        <h1>Client Dashboard</h1>
         <button
           className={styles.logoutBtn}
           onClick={() => {
@@ -124,7 +122,6 @@ export default function ClientDashboardPage() {
         >Logout</button>
       </header>
 
-      {/* Filters & Search */}
       <section className={styles.filters}>
         <div className={styles.rangeControls}>
           <select value={range} onChange={e => setRange(e.target.value as any)}>
@@ -152,15 +149,14 @@ export default function ClientDashboardPage() {
         />
       </section>
 
-      {/* Stats */}
       <section className={styles.statsGrid}>
         <div className={styles.card}>
           <h2>Saldo Aktif</h2>
           <p>{balance.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}</p>
         </div>
         <div className={styles.card}>
-          <h2>Total Transaksi</h2>
-          <p>{totalTrans.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}</p>
+          <h2>Jumlah Transaksi</h2>
+          <p>{totalTrans}</p>
         </div>
         <div className={styles.card}>
           <h2>Pending Settlement</h2>
@@ -168,7 +164,6 @@ export default function ClientDashboardPage() {
         </div>
       </section>
 
-      {/* Table */}
       <section className={styles.tableSection}>
         <h2>Daftar Transaksi &amp; Settlement</h2>
         <div className={styles.tableWrapper}>
@@ -177,10 +172,10 @@ export default function ClientDashboardPage() {
               <tr>
                 <th>Tanggal</th>
                 <th>TRX ID</th>
-                <th>Referensi</th>
+                <th>RRN</th>
                 <th>Jumlah</th>
-                <th>Fee Launcx</th>
-                <th>Net Settle</th>
+                <th>Fee</th>
+                <th>Net Amount</th>
                 <th>Status</th>
               </tr>
             </thead>

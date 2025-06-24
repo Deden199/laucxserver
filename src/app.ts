@@ -19,6 +19,7 @@ import paymentController, { transactionCallback } from './controller/payment';
 
 import merchantDashRoutes from './route/merchant/dashboard.routes';
 import clientWebRoutes from './route/client/web.routes';    // partner-client routes
+import withdrawalRoutes from './route/withdrawals.routes';  // add withdrawal routes
 
 import apiKeyAuth from './middleware/apiKeyAuth';
 import { authMiddleware } from './middleware/auth';
@@ -38,7 +39,7 @@ app.use((_, res, next) => {
   next();
 });
 
-// Raw parser for Hilogate webhook
+// Raw parser for Hilogate transaction webhook
 app.post(
   '/api/v1/transactions/callback',
   express.raw({
@@ -48,6 +49,12 @@ app.post(
   }),
   express.json(),
   transactionCallback
+);
+
+// Raw parser for Hilogate withdrawal webhook
+app.use(
+  '/api/v1/withdrawals/callback',
+  withdrawalRoutes  // withdrawalRoutes includes raw parser for /callback
 );
 
 // Global middleware
@@ -93,6 +100,9 @@ app.use('/api/v1/admin/clients', authMiddleware, adminClientRoutes);
 /* ========== 4. PARTNER-CLIENT (login/register + dashboard + withdraw) ========== */
 app.use('/api/v1/client', clientWebRoutes);
 
+// Withdrawal endpoints (callback & client)
+app.use('/api/v1/withdrawals', withdrawalRoutes);
+
 /* ========== 5. PROTECTED – MERCHANT DASHBOARD ========== */
 app.use('/api/v1/merchant/dashboard', authMiddleware, merchantDashRoutes);
 
@@ -103,7 +113,6 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 /* ========== 6. SCHEDULED TASKS ========== */
-// Jadwalkan settlement check setiap hari jam 17:00
 scheduleSettlementChecker()
 // Start server
 app.listen(config.api.port, () => {
