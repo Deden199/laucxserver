@@ -47,45 +47,46 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
   try {
     /* ── 1) RAW BODY ─────────────────────────────────────────────────────── */
     rawBody = (req as any).rawBody?.toString('utf8') ?? ''
-    logger.debug('[WD-CB] rawBody length:', rawBody.length)
-    logger.debug('[WD-CB] rawBody preview:', rawBody.slice(0, 300))
+    logger.info('[WD-CB] raw len:', rawBody.length)
+    logger.info('[WD-CB] raw preview:', rawBody.slice(0, 300))
+    console.error('[WD-CB] RAW-BODY-FIRST-300:', rawBody.slice(0, 300))
 
     /* ── 2) SIGNATURE CALC / COMPARE ─────────────────────────────────────── */
-    const requestPath = '/api/v1/withdrawals'            // pastikan ini FIX
+    const requestPath    = '/api/v1/withdrawals'
     const minimalPayload = JSON.stringify(JSON.parse(rawBody).data)
 
-    // string-to-sign versi "3 part"
-    const stringToSign = requestPath + minimalPayload + '[SECRET_KEY]'
-    logger.debug('[WD-CB] stringToSign (masked):', stringToSign)
+    const stringToSign   = requestPath + minimalPayload + '[[SECRET]]'
+    logger.info('[WD-CB] stringToSign mask:', stringToSign)
 
     const expectedSig = crypto
       .createHash('md5')
       .update(requestPath + minimalPayload + config.api.hilogate.secretKey, 'utf8')
       .digest('hex')
 
-    // tambah juga versi "body+secret" sesuai doc, biar bisa banding
-    const expectedDoc = crypto
+    const expectedDoc = crypto          // versi dokumentasi
       .createHash('md5')
       .update(rawBody + config.api.hilogate.secretKey, 'utf8')
       .digest('hex')
 
     const gotSig = req.get('X-Signature') || req.get('x-signature') || ''
-    logger.debug('[WD-CB] gotSig      =', gotSig)
-    logger.debug('[WD-CB] expectedSig =', expectedSig, '(PATH+payload)')
-    logger.debug('[WD-CB] expectedDoc =', expectedDoc, '(RAW+secret)')
-    logger.debug('[WD-CB] path        =', req.originalUrl)
+
+    logger.info('[WD-CB] gotSig     =', gotSig)
+    logger.info('[WD-CB] expectSig  =', expectedSig, '(PATH+payload)')
+    logger.info('[WD-CB] expectDoc  =', expectedDoc, '(RAW+secret)')
+    logger.info('[WD-CB] req.path   =', req.originalUrl)
+    console.error('[WD-CB] SIGS', { gotSig, expectedSig, expectedDoc })
 
     if (gotSig !== expectedSig) {
-      logger.error('[WD-CB] Signature mismatch (PATH+payload)')
+      logger.error('[WD-CB] ❌ Signature mismatch (PATH+payload)')
       return res.status(400).send('invalid-signature')
     }
 
     /* ── 3) PARSE FIELD-UTAMA ───────────────────────────────────────────── */
     const { ref_id, status, net_amount, completed_at } = JSON.parse(rawBody).data ?? {}
-    if (!ref_id)                 throw new Error('Missing ref_id')
-    if (net_amount == null)      throw new Error('Missing net_amount')
+    if (!ref_id)            throw new Error('Missing ref_id')
+    if (net_amount == null) throw new Error('Missing net_amount')
 
-    /* ── 4) AMBIL DATA WITHDRAW DI DB ───────────────────────────────────── */
+    /* ── 4) CARI DATA WITHDRAW DI DB ────────────────────────────────────── */
     const wr = await prisma.withdrawRequest.findUnique({
       where:  { refId: ref_id },
       select: { amount: true, partnerClientId: true }
@@ -95,12 +96,12 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
       return res.status(404).send('not-found')
     }
 
-    /* ── 5-6) HITUNG STATUS & UPDATE ────────────────────────────────────── */
+    /* ── 5-6) STATUS & UPDATE ───────────────────────────────────────────── */
     const up = String(status).toUpperCase()
     const newStatus =
-      ['FAILED', 'ERROR'].includes(up)     ? DisbursementStatus.FAILED     :
-      ['COMPLETED', 'SUCCESS'].includes(up)? DisbursementStatus.COMPLETED  :
-                                            DisbursementStatus.PENDING
+      ['FAILED', 'ERROR'].includes(up)      ? DisbursementStatus.FAILED     :
+      ['COMPLETED', 'SUCCESS'].includes(up) ? DisbursementStatus.COMPLETED  :
+                                             DisbursementStatus.PENDING
 
     await prisma.withdrawRequest.update({
       where: { refId: ref_id },
@@ -120,10 +121,12 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
     }
 
     /* ── 8) DONE ─────────────────────────────────────────────────────────── */
+    logger.info('[WD-CB] ✅ Processed OK:', ref_id)
     return res.status(200).json({ message: 'OK' })
 
   } catch (err: any) {
     logger.error('[WD-CB] Error:', err)
+    console.error('[WD-CB] ERROR-DETAIL:', err)
     return res.status(400).json({ error: err.message })
   }
 }
