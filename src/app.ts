@@ -10,6 +10,7 @@ import subMerchantRoutes from './route/admin/subMerchant.routes';
 import pgProviderRoutes from './route/admin/pgProvider.routes';
 import adminMerchantRoutes from './route/admin/merchant.routes';
 import adminClientRoutes from './route/admin/client.routes';
+import { withdrawalCallback } from './controller/withdrawals.controller'
 
 import ewalletRoutes from './route/ewallet.routes';
 import authRoutes from './route/auth.routes';
@@ -50,12 +51,18 @@ app.post(
   express.json(),
   transactionCallback
 );
-
-// Raw parser for Hilogate withdrawal webhook
-app.use(
+app.post(
   '/api/v1/withdrawals/callback',
-  withdrawalRoutes  // withdrawalRoutes includes raw parser for /callback
-);
+  express.raw({
+    limit: '20kb',
+    type: () => true,
+    verify: (req, _res, buf: Buffer) => { (req as any).rawBody = buf }
+  }),
+  express.json(),           // agar handler bebas parse JSON lagi jika perlu
+  withdrawalCallback        // handler yang sudah Anda tulis
+)
+// Raw parser for Hilogate withdrawal webhook
+
 
 // Global middleware
 app.set('trust proxy', 1);
@@ -82,7 +89,7 @@ app.use(requestLogger);
 
 // JSON body parser
 app.use(express.json({ limit: '20kb' }));
-
+app.use('/api/v1/withdrawals', withdrawalRoutes,)
 /* ========== 1. PUBLIC ROUTES ========== */
 app.use('/api/v1/auth', authRoutes);       // login / register for admins and clients
 app.use('/api/v1', ewalletRoutes);         // public e-wallet endpoints
