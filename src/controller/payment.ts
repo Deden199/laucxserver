@@ -132,7 +132,7 @@ export const checkPaymentStatus = async (req: AuthRequest, res: Response) => {
 export const createOrder = async (req: Request, res: Response) => {
   try {
     // ambil clientId yang di-inject oleh apiKeyAuth
-    const userId = (req as any).partnerClientId as string
+    const userId = (req as any).clientId as string
     const amount = Number(req.body.amount)
     if (isNaN(amount) || amount <= 0) {
       return res.status(400).json(createErrorResponse('`amount` harus > 0'))
