@@ -41,80 +41,101 @@ export async function retryWithdrawal(req: Request, res: Response) {
 }
 
 
+/* helper */
+const md5 = (s: string) =>
+  crypto.createHash('md5').update(s, 'utf8').digest('hex')
+
 export const withdrawalCallback = async (req: Request, res: Response) => {
-  let rawBody: string
+  let rawBody = ''
 
   try {
-    // 1) Tangkap raw body dari req.rawBody
-    rawBody = (req as any).rawBody.toString('utf8')
-    logger.debug('[Withdraw Callback] rawBody:', rawBody)
+    /* ─────────────── 1) RAW BODY ─────────────── */
+    rawBody = (req as any).rawBody?.toString('utf8') ?? ''
+    logger.info('[WD-CB] raw len  :', rawBody.length)
+    logger.info('[WD-CB] raw first:', rawBody.slice(0, 300))
 
-    // 2) Parse full payload & hitung signature
-    const full = JSON.parse(rawBody) as any
-    const minimalPayload = JSON.stringify(full.data)               // hanya objek data
-    const expectedSig = crypto
-      .createHash('md5')
-      .update(
-        '/api/v1/withdrawals' +                                 // path sesuai mount
-        minimalPayload +
-        config.api.hilogate.secretKey,
-        'utf8'
-      )
-      .digest('hex')
+    /* ─────────────── 2) HITUNG SEMUA HASH ─────────────── */
+    const pathFull   = '/api/v1/withdrawals'
+    const pathShort  = '/withdrawals'
+    const secret     = config.api.hilogate.secretKey
+    const gotSig     = req.get('X-Signature') || req.get('x-signature') || ''
 
-    const gotSig = req.header('X-Signature') || req.header('x-signature') || ''
-    logger.debug(`[Withdraw Callback] gotSig=${gotSig} expected=${expectedSig}`)
+    // payload top-level (karena withdrawal tidak punya field data)
+    const jsonTop = JSON.stringify(JSON.parse(rawBody))
 
-    if (gotSig !== expectedSig) {
-      logger.error('[Withdraw Callback] Invalid signature')
-      return res.status(400).send('Invalid signature')
+    const hashes = {
+      body_only     : md5(rawBody                       + secret),       // dokumen resmi
+      full_raw      : md5(pathFull   + rawBody          + secret),       // /api/v1 + RAW
+      short_raw     : md5(pathShort  + rawBody          + secret),       // /withdrawals + RAW
+      full_jsonTop  : md5(pathFull   + jsonTop          + secret),       // /api/v1 + JSON.stringify
+      short_jsonTop : md5(pathShort  + jsonTop          + secret),       // /withdrawals + stringify
     }
 
-    // 3) Ekstrak data yang dibutuhkan
-    const { ref_id, status, net_amount, completed_at } = full.data || {}
-    if (!ref_id)      throw new Error('Missing ref_id')
+    logger.info('[WD-CB] gotSig      =', gotSig)
+    Object.entries(hashes).forEach(([k, v]) =>
+      logger.info(`[WD-CB] ${k.padEnd(13)}=`, v),
+    )
+
+    /* ─────────────── 3) VALIDASI SIG ─────────────── */
+    const matchKey = Object.entries(hashes).find(([, v]) => v === gotSig)?.[0]
+    if (!matchKey) {
+      logger.error('[WD-CB] ❌ Signature mismatch – none matched')
+      return res.status(400).send('invalid-signature')
+    }
+    logger.info('[WD-CB] ✅ Signature matched using:', matchKey)
+
+    /* ─────────────── 4) PARSE PAYLOAD ─────────────── */
+    // Withdrawal payload ada di top-level
+    const {
+      ref_id,
+      status,
+      net_amount,
+      completed_at,
+    } = JSON.parse(rawBody) as any
+
+    if (!ref_id)            throw new Error('Missing ref_id')
     if (net_amount == null) throw new Error('Missing net_amount')
 
-    // 4) Ambil WithdrawRequest & partnerClientId + amount
+    /* ─────────────── 5) CARI WITHDRAW DI DB ─────────────── */
     const wr = await prisma.withdrawRequest.findUnique({
-      where: { refId: ref_id },
-      select: { amount: true, partnerClientId: true }
+      where : { refId: ref_id },
+      select: { amount: true, partnerClientId: true },
     })
     if (!wr) {
-      logger.error(`[Withdraw Callback] WithdrawRequest ${ref_id} not found`)
-      return res.status(404).send('Not found')
+      logger.error('[WD-CB] WithdrawRequest not found:', ref_id)
+      return res.status(404).send('not-found')
     }
 
-    // 5) Map status provider ke enum Prisma
-    const up = (status as string).toUpperCase()
-    let newStatus: DisbursementStatus
-    if (['FAILED','ERROR'].includes(up))               newStatus = DisbursementStatus.FAILED
-    else if (['COMPLETED','SUCCESS'].includes(up))     newStatus = DisbursementStatus.COMPLETED
-    else                                               newStatus = DisbursementStatus.PENDING
+    /* ─────────────── 6) UPDATE STATUS ─────────────── */
+    const up = String(status).toUpperCase()
+    const newStatus: DisbursementStatus =
+      ['FAILED', 'ERROR'].includes(up)      ? 'FAILED'     :
+      ['COMPLETED', 'SUCCESS'].includes(up) ? 'COMPLETED'  :
+                                              'PENDING'
 
-    // 6) Update WithdrawRequest
     await prisma.withdrawRequest.update({
       where: { refId: ref_id },
-      data: {
-        status:      newStatus,
-        netAmount:   net_amount,
+      data : {
+        status     : newStatus,
+        netAmount  : net_amount,
         completedAt: completed_at ? new Date(completed_at) : undefined,
       },
     })
 
-    // 7) Jika gagal, rollback saldo partner
-    if (newStatus === DisbursementStatus.FAILED) {
+    /* ─────────────── 7) ROLLBACK SALDO JIKA GAGAL ─────────────── */
+    if (newStatus === 'FAILED') {
       await prisma.partnerClient.update({
         where: { id: wr.partnerClientId },
-        data: { balance: { increment: wr.amount } },
+        data : { balance: { increment: wr.amount } },
       })
     }
 
-    // 8) Kirim OK ke Hilogate
+    /* ─────────────── 8) DONE ─────────────── */
+    logger.info('[WD-CB] Finished OK:', ref_id)
     return res.status(200).json({ message: 'OK' })
 
   } catch (err: any) {
-    logger.error('[Withdraw Callback] Error:', err)
+    logger.error('[WD-CB] Error:', err)
     return res.status(400).json({ error: err.message })
   }
 }
