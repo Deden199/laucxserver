@@ -45,17 +45,17 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
   let rawBody: string
 
   try {
-    // 1) Baca rawBody & log
+    // 1) Tangkap raw body dari req.rawBody
     rawBody = (req as any).rawBody.toString('utf8')
     logger.debug('[Withdraw Callback] rawBody:', rawBody)
 
-    // 2) Parse & signature
+    // 2) Parse full payload & hitung signature
     const full = JSON.parse(rawBody) as any
-    const minimalPayload = JSON.stringify(full.data)
+    const minimalPayload = JSON.stringify(full.data)               // hanya objek data
     const expectedSig = crypto
       .createHash('md5')
       .update(
-        '/api/v1/withdrawals' + // endpoint path
+        '/api/v1/withdrawals' +                                 // path sesuai mount
         minimalPayload +
         config.api.hilogate.secretKey,
         'utf8'
@@ -70,12 +70,12 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
       return res.status(400).send('Invalid signature')
     }
 
-    // 3) Extract data
+    // 3) Ekstrak data yang dibutuhkan
     const { ref_id, status, net_amount, completed_at } = full.data || {}
-    if (!ref_id) throw new Error('Missing ref_id')
+    if (!ref_id)      throw new Error('Missing ref_id')
     if (net_amount == null) throw new Error('Missing net_amount')
 
-    // 4) Cari request
+    // 4) Ambil WithdrawRequest & partnerClientId + amount
     const wr = await prisma.withdrawRequest.findUnique({
       where: { refId: ref_id },
       select: { amount: true, partnerClientId: true }
@@ -85,23 +85,14 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
       return res.status(404).send('Not found')
     }
 
-    // 5) Map status
-    const up = status.toUpperCase()
+    // 5) Map status provider ke enum Prisma
+    const up = (status as string).toUpperCase()
     let newStatus: DisbursementStatus
-    switch (up) {
-      case 'FAILED':
-      case 'ERROR':
-        newStatus = DisbursementStatus.FAILED
-        break
-      case 'COMPLETED':
-      case 'SUCCESS':
-        newStatus = DisbursementStatus.COMPLETED
-        break
-      default:
-        newStatus = DisbursementStatus.PENDING
-    }
+    if (['FAILED','ERROR'].includes(up))               newStatus = DisbursementStatus.FAILED
+    else if (['COMPLETED','SUCCESS'].includes(up))     newStatus = DisbursementStatus.COMPLETED
+    else                                               newStatus = DisbursementStatus.PENDING
 
-    // 6) Update record
+    // 6) Update WithdrawRequest
     await prisma.withdrawRequest.update({
       where: { refId: ref_id },
       data: {
@@ -111,7 +102,7 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
       },
     })
 
-    // 7) Rollback saldo jika gagal
+    // 7) Jika gagal, rollback saldo partner
     if (newStatus === DisbursementStatus.FAILED) {
       await prisma.partnerClient.update({
         where: { id: wr.partnerClientId },
@@ -119,7 +110,7 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
       })
     }
 
-    // 8) Respon OK
+    // 8) Kirim OK ke Hilogate
     return res.status(200).json({ message: 'OK' })
 
   } catch (err: any) {
