@@ -1,8 +1,9 @@
+// src/service/hilogate.service.ts
+
 import { prisma } from '../core/prisma'
 import hilogateClient from '../service/hilogateClient'
 
 export async function syncWithHilogate(refId: string) {
-  // gunakan method publik, bukan .request
   const response = await hilogateClient.getTransaction(refId)
   const { ref_id, status, settlement_amount, settlement_at } = response
 
@@ -16,29 +17,35 @@ export async function syncWithHilogate(refId: string) {
   })
 }
 
-export async function retryDisbursement(disbursementId: string) {
-  const disb = await prisma.disbursement.findUnique({ where: { id: disbursementId } })
-  if (!disb) throw new Error('Disbursement not found')
+export async function retryDisbursement(refId: string) {
+  // 1) Ambil ulang dari tabel WithdrawRequest
+  const wr = await prisma.withdrawRequest.findUnique({ where: { refId } })
+  if (!wr) throw new Error('WithdrawRequest not found')
 
+  // 2) Bangun flat payload sesuai spec Hilogate (snake_case)
   const payload = {
-    ref_id: disb.id,
-    amount: Number(disb.amount),
-    beneficiary: {
-      account_number: disb.beneficiary.accountNumber,
-      account_name:   disb.beneficiary.accountName,
-      bank_code:      disb.beneficiary.bankCode,
-    },
+    ref_id:             wr.refId,
+    amount:             wr.amount,
+    currency:           'IDR',
+    account_number:     wr.accountNumber,
+    account_name:       wr.accountName,
+    account_name_alias: wr.accountNameAlias,
+    bank_code:          wr.bankCode,
+    bank_name:          wr.bankName,
+    branch_name:        wr.branchName ?? '',
+    description:        `Retry withdrawal ${wr.refId}`,
   }
 
-  // gunakan method publik
-  const result = await hilogateClient.initiateDisbursement(payload)
+  // 3) Panggil Hilogate Create Withdrawal
+  const result = await hilogateClient.createWithdrawal(payload)
 
-  return prisma.disbursement.update({
-    where: { id: disbursementId },
+  // 4) Update kembali status di WithdrawRequest
+  return prisma.withdrawRequest.update({
+    where: { refId },
     data: {
-      status:      result.status,
-      totalAmount: BigInt(result.total_amount ?? disb.totalAmount),
-      transferFee: BigInt(result.transfer_fee  ?? disb.transferFee),
+      paymentGatewayId:  result.id,
+      isTransferProcess: result.is_transfer_process,
+      status:            result.status,
     },
   })
 }

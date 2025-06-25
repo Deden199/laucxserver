@@ -11,12 +11,12 @@ import {
   getClientDashboard,
   exportClientTransactions,
   requestWithdraw,
-  validateAccount // import validateAccount
+  validateAccount  // import validateAccount
 } from '../../controller/clientDashboard.controller'
 import {
   listWithdrawals,
   retryWithdrawal
-} from '../../controller/withdrawals.controller' // import list & retry
+} from '../../controller/withdrawals.controller'  // import list & retry
 
 const r = Router()
 
@@ -28,21 +28,32 @@ r.post('/login',    clientLogin)
 r.use(requireClientAuth)
 
 // 2.a) Lihat dashboard (saldo + transaksi)
-r.get ('/dashboard',         getClientDashboard)
+r.get('/dashboard',        getClientDashboard)
 
 // 2.b) Export Excel
-r.get ('/dashboard/export',  exportClientTransactions)
+r.get('/dashboard/export', exportClientTransactions)
 
 // 2.c) Request withdraw via dashboard endpoint
 r.post('/dashboard/withdraw', requestWithdraw)
 
-// 2.d) Validasi rekening bank client
-r.post('/withdrawals/validate-account', express.json(), validateAccount)
+// 2.d) **Validate** rekening bank client
+r.post(
+  '/withdrawals/validate-account',
+  express.json(),
+  validateAccount
+)
 
-// 2.e) List semua withdrawal milik client
-r.get ('/withdrawals', listWithdrawals)
+// 2.e) **Create** withdrawal (alias submit)
+r.post(
+  '/withdrawals',
+  express.json(),
+  requestWithdraw
+)
 
-// 2.f) Retry withdrawal yang gagal (optional)
+// 2.f) **List** semua withdrawal milik client
+r.get('/withdrawals', listWithdrawals)
+
+// 2.g) **Retry** withdrawal yang gagal (optional)
 r.post('/withdrawals/:id/retry', retryWithdrawal)
 
 export default r

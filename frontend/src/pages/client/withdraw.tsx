@@ -24,6 +24,13 @@ interface Withdrawal {
   createdAt: string
 }
 
+function deriveAlias(fullName: string) {
+  const parts = fullName.trim().split(' ')
+  if (parts.length === 1) return parts[0]
+  return `${parts[0]} ${parts[parts.length-1][0]}.`
+}
+
+
 export default function WithdrawPage() {
   /* ──────────────── Dashboard data ──────────────── */
   const [balance, setBalance] = useState(0)
@@ -36,10 +43,13 @@ export default function WithdrawPage() {
   /* ──────────────── Modal & Form state ──────────────── */
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({
-    bankCode: '',
-    accountNumber: '',
-    accountName: '',
-    amount: '',
+  bankCode: '',
+  accountNumber: '',
+  accountName: '',
+  accountNameAlias: '',    // ← tambahkan
+  bankName: '',            // ← tambahkan
+  branchName: '',          // ← tambahkan
+  amount: '',
   })
   const [isValid, setIsValid] = useState(false)
   const [busy, setBusy] = useState({ validating: false, submitting: false })
@@ -81,7 +91,18 @@ export default function WithdrawPage() {
       else if (n > balance) setError('Melebihi saldo')
       else setError('')
     } else setError('')
-  }
+    if (name === 'bankCode' || name === 'accountNumber') {
+        setForm(f => ({
+          ...f,
+          accountName:      '',
+          accountNameAlias: '',
+          bankName:         '',
+          branchName:       '',
+        }))
+        setIsValid(false)
+      }
+    }
+  
 
   const validateAccount = async () => {
     setBusy(b => ({ ...b, validating: true }))
@@ -95,8 +116,16 @@ export default function WithdrawPage() {
         },
       )
       if (data.status === 'valid') {
-        setForm(f => ({ ...f, accountName: data.account_holder }))
-        setIsValid(true)
+         const holder = data.account_holder as string
+
+  setForm(f => ({
+          ...f,
+          accountName:      holder,
+          accountNameAlias: deriveAlias(holder),
+          bankName:         data.bank_name,
+          branchName:       data.branch_name,
+        }))
+                setIsValid(true)
       } else throw new Error('Akun tidak valid')
     } catch (e: any) {
       setIsValid(false)
@@ -111,13 +140,35 @@ export default function WithdrawPage() {
     if (!isValid || error) return
     setBusy(b => ({ ...b, submitting: true }))
     try {
-      await apiClient.post('/client/withdrawals', {
+              // ← REPLACE: kirim payload lengkap sesuai spec
+      const payload = {
         ref_id: `wd-${Date.now()}`,
-        account_name: form.accountName,
-        account_number: form.accountNumber,
-        bank_code: form.bankCode,
         amount: +form.amount,
-      })
+        currency: 'IDR',
+        beneficiary: {
+          account_number:     form.accountNumber,
+          account_name:       form.accountName,
+          account_name_alias: form.accountNameAlias,
+          bank_code:          form.bankCode,
+          bank_name:          form.bankName,
+          branch_name:        form.branchName,
+        },
+        description: `Withdraw Rp ${form.amount}`,
+      }
+
+await apiClient.post('/client/withdrawals', {
+  ref_id: payload.ref_id,
+  account_name: payload.beneficiary.account_name,
+  account_name_alias: payload.beneficiary.account_name_alias,
+  account_number: payload.beneficiary.account_number,
+  bank_code: payload.beneficiary.bank_code,
+  bank_name: payload.beneficiary.bank_name,
+  branch_name: payload.beneficiary.branch_name,
+  amount: payload.amount,
+  currency: payload.currency,
+  description: payload.description,
+});
+
       /* refresh balance + history */
       const [d, h] = await Promise.all([
         apiClient.get('/client/dashboard'),
@@ -126,8 +177,15 @@ export default function WithdrawPage() {
       setBalance(d.data.balance)
       setPending(d.data.totalPending ?? 0)
       setWithdrawals(h.data.data)
-      setForm(f => ({ ...f, amount: '' }))
-      setIsValid(false)
+      setForm(f => ({
+        ...f,
+        amount: '',
+        accountName:      '',
+        accountNameAlias: '',
+        bankName:         '',
+        branchName:       '',
+      }))
+    setIsValid(false)
       setOpen(false)
     } catch {
       setError('Submit gagal')

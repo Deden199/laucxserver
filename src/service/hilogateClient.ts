@@ -72,18 +72,20 @@ class HilogateClient {
     return this.request('get', `/api/v1/transactions/${ref_id}`);
   }
 
-  /** Inisiasi atau retry payout/disbursement */
-  public async initiateDisbursement(payload: {
-    ref_id: string;
-    amount: number;
-    beneficiary: {
-      account_number: string;
-      account_name: string;
-      bank_code: string;
-    };
-  }): Promise<any> {
-    return this.request('post', '/api/v1/disbursements', payload);
-  }
+public async createWithdrawal(payload: {
+  ref_id:             string;
+  amount:             number;
+  currency:           string;
+  account_number:     string;
+  account_name:       string;
+  account_name_alias: string;
+  bank_code:          string;
+  bank_name:          string;
+  branch_name:        string;
+  description:        string;
+}): Promise<any> {
+  return this.request('post', '/api/v1/withdrawals', payload);
+}
 }
 
 export default new HilogateClient();

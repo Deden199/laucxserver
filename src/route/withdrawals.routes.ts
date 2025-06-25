@@ -9,30 +9,38 @@ import { requestWithdraw as createWithdrawal, validateAccount } from '../control
 
 const router = Router()
 
-// 1) Callback Hilogate (tanpa auth)
+// 1) Callback Hilogate (tanpa auth & tanpa JSON parser)
 router.post(
   '/callback',
-  express.raw({ type: 'application/json' }),
+  express.raw({ type: 'application/json', limit: '20kb' }),
   withdrawalCallback,
 )
 
 // 2) Semua endpoint di bawah ini butuh authentication client
 router.use(requireClientAuth)
 
-// 2.a) Validasi rekening bank client
+// 2.a) Validasi rekening bank client (pakai JSON parser)
 router.post(
   '/validate-account',
   express.json(),
   validateAccount
 )
 
-// 2.b) Submit withdrawal baru
-router.post('/', createWithdrawal)
+// 2.b) Submit withdrawal baru (tambahkan JSON parser)
+router.post(
+  '/',
+  express.json(),
+  createWithdrawal
+)
 
-// 2.c) List semua withdrawal milik client
+// 2.c) List semua withdrawal milik client (GET, no body parser needed)
 router.get('/', listWithdrawals)
 
-// 2.d) Retry withdrawal yang gagal (optional)
-router.post('/:id/retry', retryWithdrawal)
+// 2.d) Retry withdrawal yang gagal (tambahkan JSON parser)
+router.post(
+  '/:id/retry',
+  express.json(),
+  retryWithdrawal
+)
 
 export default router

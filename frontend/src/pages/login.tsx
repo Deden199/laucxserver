@@ -54,5 +54,3 @@ export default function LoginPage() {
     </div>
   )
 }
-
-/* AdminAuth.module.css */
