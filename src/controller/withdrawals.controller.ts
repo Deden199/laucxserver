@@ -40,35 +40,42 @@ export async function retryWithdrawal(req: Request, res: Response) {
   }
 }
 
-// Callback handler for Hilogate withdrawal status updates
+
 export const withdrawalCallback = async (req: Request, res: Response) => {
   let rawBody: string
+
   try {
     // 1) Baca rawBody & log
     rawBody = (req as any).rawBody.toString('utf8')
     logger.debug('[Withdraw Callback] rawBody:', rawBody)
 
-    // 2) Verifikasi signature Hilogate:
-    //    formula: MD5(request_body + secretKey)
+    // 2) Verifikasi signature Hilogate
+    const full = JSON.parse(rawBody) as any
+    // minimalPayload: objek yang dipakai di signature (biasanya full.data)
+    const minimalPayload = JSON.stringify(full.data)
     const expectedSig = crypto
       .createHash('md5')
-      .update(rawBody + config.api.hilogate.secretKey, 'utf8')
+      .update(
+        '/api/v1/withdrawals/callback' + // path endpoint sesuai setup app.post(...)
+        minimalPayload +
+        config.api.hilogate.secretKey,
+        'utf8'
+      )
       .digest('hex')
     const gotSig = req.header('X-Signature') || req.header('x-signature') || ''
     logger.debug(`[Withdraw Callback] gotSig=${gotSig} expected=${expectedSig}`)
+
     if (gotSig !== expectedSig) {
       logger.error('[Withdraw Callback] Invalid signature')
       return res.status(400).send('Invalid signature')
     }
 
-    // 3) Parse payload
-    const full = JSON.parse(rawBody) as any
+    // 3) Extract payload
     const { ref_id, status, net_amount, completed_at } = full.data || {}
-
-    if (!ref_id)      throw new Error('Missing ref_id')
+    if (!ref_id) throw new Error('Missing ref_id')
     if (net_amount == null) throw new Error('Missing net_amount')
 
-    // 4) Ambil record WithdrawRequest beserta partnerClientId & amount
+    // 4) Ambil record WithdrawRequest
     const wr = await prisma.withdrawRequest.findUnique({
       where: { refId: ref_id },
       select: { amount: true, partnerClientId: true }
@@ -91,7 +98,6 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
         newStatus = DisbursementStatus.COMPLETED
         break
       default:
-        // e.g. WAITING, PENDING, etc → PENDING
         newStatus = DisbursementStatus.PENDING
     }
 
@@ -99,8 +105,8 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
     await prisma.withdrawRequest.update({
       where: { refId: ref_id },
       data: {
-        status:     newStatus,
-        netAmount:  net_amount,
+        status:      newStatus,
+        netAmount:   net_amount,
         completedAt: completed_at ? new Date(completed_at) : undefined,
       },
     })
