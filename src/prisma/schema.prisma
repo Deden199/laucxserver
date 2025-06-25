@@ -199,6 +199,8 @@ model PartnerClient {
   apiSecret  String
   isActive   Boolean             @default(true)
   createdAt  DateTime            @default(now())
+  feePercent Float               @default(0.5)      
+  feeFlat    Float               @default(0)       
   clientPG   ClientPG[]          @relation("ClientToPG")
   users      ClientUser[]
   balance    Float               @default(0.0)    // saldo aktif

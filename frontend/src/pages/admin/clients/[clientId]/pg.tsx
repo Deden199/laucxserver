@@ -6,91 +6,93 @@ import api from '@/lib/api'
 import { useRequireAuth } from '@/hooks/useAuth'
 import styles from './pg.module.css'
 
-type PGProvider = {
+// Update types to include feePercent and feeFlat where needed
+interface PGProvider {
   id: string
   name: string
   credentials: { partnerId: string }
 }
-
-type ClientPGRaw = {
+interface ClientPGRaw {
   id: string
   pgProviderId: string
-  clientFee: number
+  clientFee: number  // numeric state now
   activeDays: string[]
 }
-
-type ClientPG = ClientPGRaw & {
+interface ClientPG extends ClientPGRaw {
   pgProvider: PGProvider | null
 }
-
-type ClientInfo = { id: string; name: string }
+interface ClientInfo {
+  id: string
+  name: string
+}
 
 export default function ClientPGPage() {
   useRequireAuth()
-  const { query } = useRouter()
-  const clientId = Array.isArray(query.clientId) ? query.clientId[0] : query.clientId
+  const {
+    query: { clientId }
+  } = useRouter()
+  const cid = Array.isArray(clientId) ? clientId[0] : clientId
 
-  const [client, setClient]       = useState<ClientInfo | null>(null)
-  const [providers, setProviders] = useState<PGProvider[]>([])
-  const [conns, setConns]         = useState<ClientPG[]>([])
-  const [selectedProv, setSelectedProv] = useState('')
-  const [fee, setFee]             = useState('')
-  const [days, setDays]           = useState<string[]>([])
-  const [error, setError]         = useState('')
-  const [success, setSuccess]     = useState('')
-  const [loading, setLoading]     = useState(false)
+  const [client, setClient]           = useState<ClientInfo | null>(null)
+  const [providers, setProviders]     = useState<PGProvider[]>([])
+  const [conns, setConns]             = useState<ClientPG[]>([])
+  const [selectedProv, setSelectedProv] = useState<string>('')
 
-  // 1) Load client name
+  // fee is now number
+  const [fee, setFee]                 = useState<number>(0)
+  const [days, setDays]               = useState<string[]>([])
+  const [error, setError]             = useState<string>('')
+  const [success, setSuccess]         = useState<string>('')
+  const [loading, setLoading]         = useState<boolean>(false)
+
+  // Load client info
   useEffect(() => {
-    if (!clientId) return
-    api.get<ClientInfo>(`/admin/clients/${clientId}`)
+    if (!cid) return
+    api.get<ClientInfo>(`/admin/clients/${cid}`)
       .then(r => setClient(r.data))
-      .catch(() => setClient({ id: clientId, name: '—' }))
-  }, [clientId])
+      .catch(() => setClient({ id: cid, name: '—' }))
+  }, [cid])
 
-  // 2) Load providers once
+  // Load providers
   useEffect(() => {
-    if (!clientId) return
+    if (!cid) return
     api.get<PGProvider[]>(`/admin/pg-providers`)
       .then(r => {
         setProviders(r.data)
-        if (r.data[0]) setSelectedProv(r.data[0].id)
+        if (r.data.length) setSelectedProv(r.data[0].id)
       })
       .catch(console.error)
-  }, [clientId])
+  }, [cid])
 
-  // 3) Fetch connections whenever providers ready
+  // Fetch connections
   useEffect(() => {
-    if (!clientId || providers.length === 0) return
+    if (!cid || providers.length === 0) return
     fetchConns()
-  }, [clientId, providers])
+  }, [cid, providers])
 
-  // clear success message
+  // clear success
   useEffect(() => {
-    if (success) {
-      const t = setTimeout(() => setSuccess(''), 3000)
-      return () => clearTimeout(t)
-    }
+    if (!success) return
+    const t = setTimeout(() => setSuccess(''), 3000)
+    return () => clearTimeout(t)
   }, [success])
 
-  function fetchConns() {
-    api.get<ClientPGRaw[]>(`/admin/clients/${clientId}/pg`, {
-      validateStatus: status => (status >= 200 && status < 300) || status === 304,
-      headers: { 'Cache-Control': 'no-cache' },
-    })
-    .then(r => {
+  async function fetchConns() {
+    try {
+      const r = await api.get<ClientPGRaw[]>(`/admin/clients/${cid}/pg`, {
+        validateStatus: status => (status >= 200 && status < 300) || status === 304,
+        headers: { 'Cache-Control': 'no-cache' },
+      })
       if (r.status === 200) {
-        // merge raw conn + provider info
-        const merged: ClientPG[] = r.data.map(c => ({
+        const merged = r.data.map(c => ({
           ...c,
           pgProvider: providers.find(p => p.id === c.pgProviderId) || null
         }))
         setConns(merged)
       }
-    })
-    .catch(err => {
+    } catch (err) {
       console.error('fetchConns error', err)
-    })
+    }
   }
 
   const toggleDay = (d: string) => {
@@ -98,20 +100,20 @@ export default function ClientPGPage() {
   }
 
   const createConn = async () => {
-    if (!selectedProv || !fee || days.length === 0) {
-      setError('Pilih gateway, fee & minimal 1 hari aktif')
+    if (!selectedProv || fee <= 0 || days.length === 0) {
+      setError('Pilih gateway, fee > 0 & minimal 1 hari aktif')
       return
     }
     setError(''); setSuccess(''); setLoading(true)
     try {
-      await api.post(`/admin/clients/${clientId}/pg`, {
+      await api.post(`/admin/clients/${cid}/pg`, {
         pgProviderId: selectedProv,
-        clientFee: Number(fee),
+        clientFee: fee,
         activeDays: days
       })
       setSuccess('Connection berhasil ditambahkan!')
       fetchConns()
-      setFee(''); setDays([])
+      setFee(0); setDays([])
     } catch (e: any) {
       setError(e.response?.data?.error || 'Gagal membuat koneksi')
     } finally {
@@ -120,26 +122,39 @@ export default function ClientPGPage() {
   }
 
   const updateConn = async (id: string) => {
-    const val = prompt('Masukkan fee baru (%)')
-    if (val == null) return
-    const nf = Number(val)
-    if (isNaN(nf)) { alert('Fee harus angka'); return }
-    await api.patch(`/admin/clients/${clientId}/pg/${id}`, { clientFee: nf })
-    setSuccess('Connection berhasil diupdate!')
-    fetchConns()
+    // better UI than prompt: reuse create form? minimal update fee only
+    const nf = fee
+    if (nf <= 0) { alert('Fee harus > 0'); return }
+    setLoading(true)
+    try {
+      await api.patch(`/admin/clients/${cid}/pg/${id}`, { clientFee: nf, activeDays: days })
+      setSuccess('Connection berhasil diupdate!')
+      fetchConns()
+    } catch (e: any) {
+      setError(e.response?.data?.error || 'Gagal mengupdate koneksi')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const deleteConn = async (id: string) => {
     if (!confirm('Yakin ingin menghapus?')) return
-    await api.delete(`/admin/clients/${clientId}/pg/${id}`)
-    setSuccess('Connection berhasil dihapus!')
-    fetchConns()
+    setLoading(true)
+    try {
+      await api.delete(`/admin/clients/${cid}/pg/${id}`)
+      setSuccess('Connection berhasil dihapus!')
+      fetchConns()
+    } catch {
+      setError('Gagal menghapus koneksi')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
     <div className={styles.container}>
       <h1 className={styles.title}>
-        Client {client?.name || clientId} — PG Connections
+        Client {client?.name || cid} — PG Connections
       </h1>
 
       {error   && <div className={styles.error}>{error}</div>}
@@ -160,8 +175,10 @@ export default function ClientPGPage() {
           className={styles.input}
           type="number"
           placeholder="Fee (%)"
+          min={0}
+          step={0.1}
           value={fee}
-          onChange={e => setFee(e.target.value)}
+          onChange={e => setFee(parseFloat(e.target.value) || 0)}
         />
 
         <div className={styles.days}>
@@ -182,7 +199,7 @@ export default function ClientPGPage() {
           onClick={createConn}
           disabled={loading}
         >
-          {loading ? 'Adding…' : 'Add Connection'}
+          {loading ? 'Processing…' : 'Save Connection'}
         </button>
       </div>
 
@@ -198,23 +215,29 @@ export default function ClientPGPage() {
             </tr>
           </thead>
           <tbody>
-            {conns.map(c => (
-              <tr key={c.id}>
-                <td>{c.pgProvider?.name || c.pgProviderId}</td>
-                <td>{c.pgProvider?.credentials.partnerId || '—'}</td>
-                <td>{c.clientFee}</td>
-                <td>{c.activeDays.map(d => d.slice(0,3)).join(', ')}</td>
-                <td className={styles.actions}>
-                  <button className={styles.editBtn} onClick={() => updateConn(c.id)}>Edit</button>
-                  <button className={styles.delBtn} onClick={() => deleteConn(c.id)}>Delete</button>
-                </td>
-              </tr>
-            ))}
-            {conns.length === 0 && (
-              <tr>
-                <td colSpan={5} className={styles.empty}>No connections</td>
-              </tr>
-            )}
+            {conns.length === 0
+              ? (
+                <tr>
+                  <td colSpan={5} className={styles.empty}>No connections</td>
+                </tr>
+              ) : (
+                conns.map(c => (
+                  <tr key={c.id}>
+                    <td>{c.pgProvider?.name || c.pgProviderId}</td>
+                    <td>{c.pgProvider?.credentials.partnerId || '—'}</td>
+                    <td>{c.clientFee}</td>
+                    <td>{c.activeDays.map(d => d.slice(0,3)).join(', ')}</td>
+                    <td className={styles.actions}>
+                      <button className={styles.editBtn} onClick={() => {
+                        setFee(c.clientFee)
+                        setDays(c.activeDays)
+                        updateConn(c.id)
+                      }}>Update</button>
+                      <button className={styles.delBtn} onClick={() => deleteConn(c.id)}>Delete</button>
+                    </td>
+                  </tr>
+                ))
+              )}
           </tbody>
         </table>
       </div>

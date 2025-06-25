@@ -327,47 +327,53 @@ export const checkPaymentStatus = async (req: Request) => {
 /* ═════════════ 4. Create Aggregated Order ═════════════ */
 export const createOrder = async (payload: OrderRequest): Promise<OrderResponse> => {
   const forced = config.api.forceProvider?.toLowerCase() || null;
-  // 2) Kalau di-override jadi Hilogate, panggil flow direct dan return
-if (forced === 'hilogate') {
-  // gunakan createTransaction untuk Hilogate
-  const direct = await createTransaction({
-    merchantName: 'hilogate',
-    price:        payload.amount,
-    buyer:        payload.userId,
-  });
-  const { qrImage, totalAmount, expiredTs, referenceNo } = direct;
-  const checkoutUrl = `${config.api.baseUrl}/api/v1/checkout/${referenceNo}`;
-  // simpan ke tabel Order
-  await prisma.order.create({
-    data: {
-      id:           referenceNo,
-      userId:       payload.userId,
-      merchantId:   payload.userId,
-      amount:       totalAmount,
-      channel:      'hilogate',
-      status:       'PENDING',
-      qrPayload:    qrImage,
-      checkoutUrl,
-    },
-  });
-  // return langsung
-  return {
-    orderId:    referenceNo,
-    qrPayload:  qrImage,
-    checkoutUrl,
-  };
-}
 
+  // ─── Forced = Hilogate ───
+  if (forced === 'hilogate') {
+    const direct = await createTransaction({
+      merchantName: 'hilogate',
+      price:        payload.amount,
+      buyer:        payload.userId,
+    });
+    const { qrImage, totalAmount, referenceNo } = direct;
+    const checkoutUrl = `${config.api.baseUrl}/api/v1/checkout/${referenceNo}`;
+
+    // Platform fee only
+    const pc = await prisma.partnerClient.findUnique({ where: { id: payload.userId } });
+    if (!pc) throw new Error('PartnerClient tidak ditemukan');
+    const feePlatform = Math.round(totalAmount * (pc.feePercent / 100) + pc.feeFlat);
+    const settlementAmount = totalAmount - feePlatform;
+
+    await prisma.order.create({
+      data: {
+        id:               referenceNo,
+        userId:           payload.userId,
+        merchantId:       payload.userId,
+        amount:           totalAmount,
+        channel:          'hilogate',
+        status:           'PENDING',
+        qrPayload:        qrImage,
+        checkoutUrl,
+        feeLauncx:        feePlatform,
+        fee3rdParty:      0,
+        settlementAmount,
+      }
+    });
+
+    return { orderId: referenceNo, qrPayload: qrImage, checkoutUrl };
+  }
+
+  // ─── Aggregated flow ───
   const providers = await getActiveProvidersForClient(payload.userId);
   if (!providers.length) throw new Error(`No active payment channels for user ${payload.userId}`);
-let chosen;
-if (forced) {
-  chosen = providers.find(p => p.name.toLowerCase() === forced);
-  if (!chosen) throw new Error(`Provider override "${forced}" tidak tersedia`);
-} else {
-  chosen = providers[Math.floor(Math.random() * providers.length)];
-}
-const channel = chosen;
+
+  // Choose provider by override or randomly
+  let channel = forced
+    ? providers.find(p => p.name.toLowerCase() === forced)
+    : providers[Math.floor(Math.random() * providers.length)];
+  if (!channel) throw new Error(`Provider override "${forced}" tidak tersedia`);
+
+  // Generate QR or checkout URL
   const orderId = generateRandomId();
   let qrPayload: string | undefined;
   let checkoutUrl: string;
@@ -377,12 +383,46 @@ const channel = chosen;
   } else {
     checkoutUrl = await channel.generateCheckoutUrl({ orderId, amount: payload.amount });
   }
-  await prisma.order.create({
-    data: { id: orderId, userId: payload.userId,  merchantId:   payload.userId,
-amount: payload.amount, channel: channel.name, status: 'PENDING', qrPayload, checkoutUrl },
+
+  // Platform fee
+  const pc = await prisma.partnerClient.findUnique({ where: { id: payload.userId } });
+  if (!pc) throw new Error('PartnerClient tidak ditemukan');
+  const feePlatform = Math.round(payload.amount * (pc.feePercent / 100) + pc.feeFlat);
+
+  // Gateway fee from ClientPG junction
+  // 1) lookup PGProvider by name
+  const pg = await prisma.pGProvider.findUnique({ where: { name: channel.name } });
+  if (!pg) throw new Error(`PGProvider ${channel.name} tidak ditemukan`);
+  // 2) lookup clientPG
+  const cp = await prisma.clientPG.findUnique({
+    where: { clientId_pgProviderId: { clientId: pc.id, pgProviderId: pg.id } }
   });
+  const feeGateway = cp ? Math.round(payload.amount * (cp.clientFee / 100)) : 0;
+
+  // Total fee & settlement
+  const totalFee = feePlatform + feeGateway;
+  const settlementAmount = payload.amount - totalFee;
+
+  await prisma.order.create({
+    data: {
+      id:               orderId,
+      userId:           payload.userId,
+      merchantId:       payload.userId,
+      amount:           payload.amount,
+      channel:          channel.name,
+      status:           'PENDING',
+      qrPayload,
+      checkoutUrl,
+      feeLauncx:        feePlatform,
+      fee3rdParty:      feeGateway,
+      settlementAmount,
+    }
+  });
+
   return { orderId, checkoutUrl, qrPayload };
 };
+
+
 
 /* ═════════════ 5. Get Order ═════════════ */
 export const getOrder = async (id: string) => prisma.order.findUnique({ where: { id } });
