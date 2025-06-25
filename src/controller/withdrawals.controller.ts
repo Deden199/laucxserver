@@ -41,77 +41,71 @@ export async function retryWithdrawal(req: Request, res: Response) {
 }
 
 
-/* helper */
-const md5 = (s: string) =>
-  crypto.createHash('md5').update(s, 'utf8').digest('hex')
+const md5 = (s: string) => crypto.createHash('md5').update(s, 'utf8').digest('hex')
 
 export const withdrawalCallback = async (req: Request, res: Response) => {
-  let rawBody = ''
-
   try {
-    /* ─────────────── 1) RAW BODY ─────────────── */
-    rawBody = (req as any).rawBody?.toString('utf8') ?? ''
-    logger.info('[WD-CB] raw len  :', rawBody.length)
-    logger.info('[WD-CB] raw first:', rawBody.slice(0, 300))
-
-    /* ─────────────── 2) HITUNG SEMUA HASH ─────────────── */
-    const pathFull   = '/api/v1/withdrawals'
-    const pathShort  = '/withdrawals'
-    const secret     = config.api.hilogate.secretKey
-    const gotSig     = req.get('X-Signature') || req.get('x-signature') || ''
-
-    // payload top-level (karena withdrawal tidak punya field data)
-    const jsonTop = JSON.stringify(JSON.parse(rawBody))
-
-    const hashes = {
-      body_only     : md5(rawBody                       + secret),       // dokumen resmi
-      full_raw      : md5(pathFull   + rawBody          + secret),       // /api/v1 + RAW
-      short_raw     : md5(pathShort  + rawBody          + secret),       // /withdrawals + RAW
-      full_jsonTop  : md5(pathFull   + jsonTop          + secret),       // /api/v1 + JSON.stringify
-      short_jsonTop : md5(pathShort  + jsonTop          + secret),       // /withdrawals + stringify
+    /* 1. RAW BODY (fall-back ke stringify body kalau verify gagal) */
+    let rawBody: string =
+      (req as any).rawBody ??
+      (req.body ? JSON.stringify(req.body) : '')
+    if (!rawBody) {
+      logger.error('[WD-CB] ❌ rawBody still empty – check capture middleware')
+      return res.status(400).send('empty-body')
     }
 
-    logger.info('[WD-CB] gotSig      =', gotSig)
-    Object.entries(hashes).forEach(([k, v]) =>
-      logger.info(`[WD-CB] ${k.padEnd(13)}=`, v),
-    )
+    logger.info('[WD-CB] raw.len =', rawBody.length)
+    logger.info('[WD-CB] preview  =', rawBody.slice(0, 250))
 
-    /* ─────────────── 3) VALIDASI SIG ─────────────── */
-    const matchKey = Object.entries(hashes).find(([, v]) => v === gotSig)?.[0]
-    if (!matchKey) {
-      logger.error('[WD-CB] ❌ Signature mismatch – none matched')
+    /* 2. Hitung semua varian signature */
+    const pathFull  = '/api/v1/withdrawals'
+    const pathShort = '/withdrawals'
+    const secret    = config.api.hilogate.secretKey
+    const jsonTop   = JSON.stringify(JSON.parse(rawBody))
+
+    const variants = {
+      body_only     : md5(rawBody + secret),
+      full_raw      : md5(pathFull  + rawBody + secret),
+      short_raw     : md5(pathShort + rawBody + secret),
+      full_jsonTop  : md5(pathFull  + jsonTop + secret),
+      short_jsonTop : md5(pathShort + jsonTop + secret),
+    }
+
+    const got = req.get('X-Signature') || ''
+    logger.info('[WD-CB] gotSig =', got)
+    Object.entries(variants).forEach(([k, v]) => logger.info(`[WD-CB] ${k} =`, v))
+
+    const matched = Object.entries(variants).find(([, v]) => v === got)?.[0]
+    if (!matched) {
+      logger.error('[WD-CB] ❌ Signature mismatch – no variant matched')
       return res.status(400).send('invalid-signature')
     }
-    logger.info('[WD-CB] ✅ Signature matched using:', matchKey)
+    logger.info('[WD-CB] ✅ Signature matched with variant:', matched)
 
-    /* ─────────────── 4) PARSE PAYLOAD ─────────────── */
-    // Withdrawal payload ada di top-level
+    /* 3. Parse field utama (top-level) */
     const {
       ref_id,
       status,
       net_amount,
       completed_at,
-    } = JSON.parse(rawBody) as any
+    } = JSON.parse(rawBody)
 
     if (!ref_id)            throw new Error('Missing ref_id')
     if (net_amount == null) throw new Error('Missing net_amount')
 
-    /* ─────────────── 5) CARI WITHDRAW DI DB ─────────────── */
+    /* 4. Ambil WithdrawRequest */
     const wr = await prisma.withdrawRequest.findUnique({
       where : { refId: ref_id },
       select: { amount: true, partnerClientId: true },
     })
-    if (!wr) {
-      logger.error('[WD-CB] WithdrawRequest not found:', ref_id)
-      return res.status(404).send('not-found')
-    }
+    if (!wr) return res.status(404).send('withdraw-not-found')
 
-    /* ─────────────── 6) UPDATE STATUS ─────────────── */
+    /* 5. Map status & update */
     const up = String(status).toUpperCase()
     const newStatus: DisbursementStatus =
       ['FAILED', 'ERROR'].includes(up)      ? 'FAILED'     :
       ['COMPLETED', 'SUCCESS'].includes(up) ? 'COMPLETED'  :
-                                              'PENDING'
+                                             'PENDING'
 
     await prisma.withdrawRequest.update({
       where: { refId: ref_id },
@@ -122,7 +116,7 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
       },
     })
 
-    /* ─────────────── 7) ROLLBACK SALDO JIKA GAGAL ─────────────── */
+    /* 6. Rollback saldo jika gagal */
     if (newStatus === 'FAILED') {
       await prisma.partnerClient.update({
         where: { id: wr.partnerClientId },
@@ -130,10 +124,8 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
       })
     }
 
-    /* ─────────────── 8) DONE ─────────────── */
-    logger.info('[WD-CB] Finished OK:', ref_id)
-    return res.status(200).json({ message: 'OK' })
-
+    logger.info('[WD-CB] Done OK for', ref_id)
+    return res.status(200).json({ ok: true })
   } catch (err: any) {
     logger.error('[WD-CB] Error:', err)
     return res.status(400).json({ error: err.message })

@@ -1,4 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
+import { captureRawBody } from './middleware/captureRawBody'
+
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
@@ -31,6 +33,7 @@ import requestLogger from './middleware/log';
 
 const app = express();
 app.disable('etag');
+app.use(captureRawBody)
 
 // No-cache headers
 app.use((_, res, next) => {
@@ -107,8 +110,6 @@ app.use('/api/v1/admin/clients', authMiddleware, adminClientRoutes);
 /* ========== 4. PARTNER-CLIENT (login/register + dashboard + withdraw) ========== */
 app.use('/api/v1/client', clientWebRoutes);
 
-// Withdrawal endpoints (callback & client)
-app.use('/api/v1/withdrawals', withdrawalRoutes);
 
 /* ========== 5. PROTECTED – MERCHANT DASHBOARD ========== */
 app.use('/api/v1/merchant/dashboard', authMiddleware, merchantDashRoutes);
