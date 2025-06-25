@@ -54,12 +54,11 @@ app.post(
 app.post(
   '/api/v1/withdrawals/callback',
   express.raw({
-    limit: '20kb',
-    type: () => true,
-    verify: (req, _res, buf: Buffer) => { (req as any).rawBody = buf }
+    type : '*/*',
+    limit: '1mb',
+    verify: (_req, _res, buf) => { (_req as any).rawBody = buf.toString('utf8') }
   }),
-  express.json(),           // agar handler bebas parse JSON lagi jika perlu
-  withdrawalCallback        // handler yang sudah Anda tulis
+  withdrawalCallback             // ← handler super-verbose
 )
 // Raw parser for Hilogate withdrawal webhook
 
