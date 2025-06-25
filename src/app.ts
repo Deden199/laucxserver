@@ -31,7 +31,9 @@ import requestLogger from './middleware/log';
 
 const app = express();
 app.disable('etag');
-
+app.use(express.json({
+  verify: (req, _res, buf) => { (req as any).rawBody = buf }
+}))
 // No-cache headers
 app.use((_, res, next) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');

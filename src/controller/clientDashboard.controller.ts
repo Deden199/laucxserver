@@ -164,62 +164,111 @@ export async function exportClientTransactions(req: ClientAuthRequest, res: Resp
 /**
  * POST /api/v1/client/dashboard/withdraw
  */
+const BANK_NAMES: Record<string, string> = {
+  mandiri:         'Bank Mandiri',
+  bri:             'Bank Rakyat Indonesia',
+  bca:             'Bank Central Asia',
+  cimb:            'CIMB Niaga & CIMB Niaga Syariah',
+  muamalat:        'Bank Muamalat',
+  permata:         'Bank Permata & Permata Syariah',
+  bii:             'Maybank Indonesia',
+  panin:           'Panin Bank',
+  ocbc:            'OCBC NISP',
+  citibank:        'Citibank',
+  artha:           'Bank Artha Graha Internasional',
+  tokyo:           'Bank of Tokyo Mitsubishi UFJ',
+  dbs:             'DBS Indonesia',
+  standard_char:   'Standard Chartered Bank',
+  // tambahkan kode lain jika perlu
+}
+
+/**
+ * POST /api/v1/client/dashboard/withdraw/validate
+ */
 export async function validateAccount(req: ClientAuthRequest, res: Response) {
   const { account_number, bank_code } = req.body
   try {
-    const result = await hilogateClient.validateAccount(account_number, bank_code)
-    // Kirim data validasi ke klien
-    return res.json(result.data)
+    const payload = (await hilogateClient.validateAccount(account_number, bank_code)).data
+
+    if (payload.status !== 'valid') {
+      return res.status(400).json({ error: 'Invalid account' })
+    }
+
+    // Hanya kirim kembali data yang tersedia
+    return res.json({
+      account_number: payload.account_number,
+      account_holder: payload.account_holder,
+      bank_code:      payload.bank_code,
+      status:         payload.status,
+    })
   } catch (err: any) {
+    console.error('[validateAccount] error:', err)
     return res.status(400).json({ message: err.message || 'Validasi akun gagal' })
   }
 }
 
+// helper retry untuk deadlock/write conflict
+async function retry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
+  let lastError: any
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn()
+    } catch (e: any) {
+      lastError = e
+      if (e.message?.includes('write conflict') || e.code === 'P2034') {
+        // tunggu sejenak sebelum retry
+        await new Promise(r => setTimeout(r, 50 * (i + 1)))
+        continue
+      }
+      throw e
+    }
+  }
+  throw lastError
+}
+
+/**
+ * POST /api/v1/client/dashboard/withdraw
+ */
 export const requestWithdraw = async (req: ClientAuthRequest, res: Response) => {
   try {
-    const {
-      account_name,
-      account_name_alias,
-      account_number,
-      bank_code,
-      amount,
-    } = req.body
+    const { account_number, bank_code, account_name_alias, amount } = req.body
 
     // 1) Ambil user & partnerClient
     const user = await prisma.clientUser.findUnique({
       where: { id: req.clientUserId! },
       include: { partnerClient: true },
     })
-    if (!user) {
-      return res.status(404).json({ error: 'User tidak ditemukan' })
-    }
+    if (!user) return res.status(404).json({ error: 'User tidak ditemukan' })
     const pc = user.partnerClient
 
-    // 2) Periksa saldo aktif
+    // 2) Cek saldo aktif
     if (amount > pc.balance) {
       return res.status(400).json({ error: 'Insufficient balance' })
     }
 
-    // 3) Validasi rekening via Hilogate
-    const valid = await hilogateClient.validateAccount(account_number, bank_code)
-    if (valid.data.status !== 'valid') {
+    // 3) Validasi account via Hilogate
+    const valid = (await hilogateClient.validateAccount(account_number, bank_code)).data
+    if (valid.status !== 'valid') {
       return res.status(400).json({ error: 'Invalid account' })
     }
 
-    // 4) Ambil nama bank & cabang, fallback
-    const bankName   = valid.data.bank_name   ?? ''
-    const branchName = valid.data.branch_name ?? ''
+    // 4) Ambil nama pemilik
+    const acctHolder = valid.account_holder
 
-    // 5) Tentukan alias
-    const alias = account_name_alias ?? account_name
+    // 5) Lookup nama bank
+    const bankName   = BANK_NAMES[bank_code] ?? ''
+    const branchName = ''  // tidak tersedia di Hilogate
 
-    // 6) Buat record withdraw + hold saldo
+    // 6) Tentukan alias
+    const alias = account_name_alias ?? acctHolder
+
+    // 7) Buat record withdraw + hold saldo
     const refId = `wd-${Date.now()}`
     const wr = await prisma.withdrawRequest.create({
       data: {
         refId,
         partnerClientId:  pc.id,
-        accountName:      account_name,
+        accountName:      acctHolder,
         accountNameAlias: alias,
         accountNumber:    account_number,
         bankCode:         bank_code,
@@ -234,75 +283,50 @@ export const requestWithdraw = async (req: ClientAuthRequest, res: Response) => 
       data: { balance: { decrement: amount } },
     })
 
-    // 7) Kirim request ke Hilogate (Create Withdrawal)
-    let hg
-    try {
-      hg = await hilogateClient.createWithdrawal({
-        ref_id:             refId,
-        amount,
-        currency:           'IDR',
-        account_number:     account_number,
-        account_name:       account_name,
-        account_name_alias: alias,
-        bank_code:          bank_code,
-        bank_name:          bankName,
-        branch_name:        branchName,
-        description:        `Withdraw Rp ${amount}`,
-      })
-    } catch (e: any) {
-      // rollback saldo & tandai gagal
-      await prisma.partnerClient.update({
-        where: { id: pc.id },
-        data: { balance: { increment: amount } },
-      })
-      await prisma.withdrawRequest.update({
-        where: { refId },
-        data: { status: DisbursementStatus.FAILED },
-      })
-
-      // logging detail
-      console.error('[Hilogate Error] Message:', e.message)
-      if (e.response) {
-        console.error('[Hilogate Error] URL:',            e.response.config.baseURL + e.response.config.url)
-        console.error('[Hilogate Error] Status:',         e.response.status)
-        console.error('[Hilogate Error] Request Payload:', e.response.config.data)
-        console.error('[Hilogate Error] Response Data:',  e.response.data)
-      }
-
-      return res.status(502).json({
-        error:   'Disbursement failed',
-        details: e.response?.data || e.message,
-      })
-    }
-
-    // 8) Pemetaan status dari Hilogate ke enum internal
-    const { id: pgId, status: hgStatus, is_transfer_process } = hg.data
-    const newStatus = ((): DisbursementStatus => {
-      switch (hgStatus) {
-        case 'WAITING':
-        case 'PENDING':    return DisbursementStatus.PENDING
-        case 'PROCESSING':  return DisbursementStatus.PENDING
-
-        
-        case 'COMPLETED':
-        case 'SUCCESS':    return DisbursementStatus.COMPLETED
-        case 'FAILED':
-        case 'ERROR':      return DisbursementStatus.FAILED
-        default:           return DisbursementStatus.PENDING
-      }
-    })()
-
-    await prisma.withdrawRequest.update({
-      where: { refId },
-      data: {
-        paymentGatewayId:  pgId,
-        isTransferProcess: is_transfer_process,
-        status:            newStatus,
-      },
+    // 8) Kirim ke Hilogate
+    const hg = await hilogateClient.createWithdrawal({
+      ref_id:             refId,
+      amount,
+      currency:           'IDR',
+      account_number,
+      account_name:       acctHolder,
+      account_name_alias: alias,
+      bank_code,
+      bank_name:          bankName,
+      branch_name:        branchName,
+      description:        `Withdraw Rp ${amount}`,
     })
 
-    // 9) Return success
+    // 9) Mapping status
+    const { id: pgId, status: hgStatus, is_transfer_process } = hg.data
+    let newStatus: DisbursementStatus
+    if (['WAITING','PENDING','PROCESSING'].includes(hgStatus)) {
+      newStatus = DisbursementStatus.PENDING
+    } else if (['COMPLETED','SUCCESS'].includes(hgStatus)) {
+      newStatus = DisbursementStatus.COMPLETED
+    } else {
+      newStatus = DisbursementStatus.FAILED
+    }
+
+    // 10) Idempotent update + retry deadlock
+    const result = await retry(() =>
+      prisma.withdrawRequest.updateMany({
+        where: { refId, status: DisbursementStatus.PENDING },
+        data: {
+          paymentGatewayId:  pgId,
+          isTransferProcess: is_transfer_process,
+          status:            newStatus,
+        },
+      })
+    )
+
+    if (result.count === 0) {
+      console.warn(`[withdraw] refId=${refId} sudah di-update sebelumnya`)
+    }
+
+    // 11) Return response
     return res.status(201).json({ id: wr.id, refId, status: newStatus })
+
   } catch (err: any) {
     console.error('[requestWithdraw] error:', err)
     return res.status(500).json({ error: err.message || 'Internal server error' })
