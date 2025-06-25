@@ -49,19 +49,19 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
     rawBody = (req as any).rawBody.toString('utf8')
     logger.debug('[Withdraw Callback] rawBody:', rawBody)
 
-    // 2) Verifikasi signature Hilogate
+    // 2) Parse & signature
     const full = JSON.parse(rawBody) as any
-    // minimalPayload: objek yang dipakai di signature (biasanya full.data)
     const minimalPayload = JSON.stringify(full.data)
     const expectedSig = crypto
       .createHash('md5')
       .update(
-        '/api/v1/withdrawals' + // path endpoint sesuai setup app.post(...)
+        '/api/v1/withdrawals' + // endpoint path
         minimalPayload +
         config.api.hilogate.secretKey,
         'utf8'
       )
       .digest('hex')
+
     const gotSig = req.header('X-Signature') || req.header('x-signature') || ''
     logger.debug(`[Withdraw Callback] gotSig=${gotSig} expected=${expectedSig}`)
 
@@ -70,12 +70,12 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
       return res.status(400).send('Invalid signature')
     }
 
-    // 3) Extract payload
+    // 3) Extract data
     const { ref_id, status, net_amount, completed_at } = full.data || {}
     if (!ref_id) throw new Error('Missing ref_id')
     if (net_amount == null) throw new Error('Missing net_amount')
 
-    // 4) Ambil record WithdrawRequest
+    // 4) Cari request
     const wr = await prisma.withdrawRequest.findUnique({
       where: { refId: ref_id },
       select: { amount: true, partnerClientId: true }
@@ -85,10 +85,10 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
       return res.status(404).send('Not found')
     }
 
-    // 5) Map status provider ke enum internal
-    const upStatus = (status as string).toUpperCase()
+    // 5) Map status
+    const up = status.toUpperCase()
     let newStatus: DisbursementStatus
-    switch (upStatus) {
+    switch (up) {
       case 'FAILED':
       case 'ERROR':
         newStatus = DisbursementStatus.FAILED
@@ -101,7 +101,7 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
         newStatus = DisbursementStatus.PENDING
     }
 
-    // 6) Update WithdrawRequest
+    // 6) Update record
     await prisma.withdrawRequest.update({
       where: { refId: ref_id },
       data: {
@@ -111,7 +111,7 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
       },
     })
 
-    // 7) Jika gagal, kembalikan saldo partner
+    // 7) Rollback saldo jika gagal
     if (newStatus === DisbursementStatus.FAILED) {
       await prisma.partnerClient.update({
         where: { id: wr.partnerClientId },
@@ -119,8 +119,9 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
       })
     }
 
-    // 8) Kirim sukses ke Hilogate
+    // 8) Respon OK
     return res.status(200).json({ message: 'OK' })
+
   } catch (err: any) {
     logger.error('[Withdraw Callback] Error:', err)
     return res.status(400).json({ error: err.message })
