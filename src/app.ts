@@ -1,6 +1,4 @@
 import express, { Request, Response, NextFunction } from 'express';
-import { captureRawBody } from './middleware/captureRawBody'
-
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
@@ -33,7 +31,6 @@ import requestLogger from './middleware/log';
 
 const app = express();
 app.disable('etag');
-app.use(captureRawBody)
 
 // No-cache headers
 app.use((_, res, next) => {
