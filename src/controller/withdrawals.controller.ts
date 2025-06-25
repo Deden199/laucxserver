@@ -56,7 +56,7 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
     const expectedSig = crypto
       .createHash('md5')
       .update(
-        '/api/v1/withdrawals/callback' + // path endpoint sesuai setup app.post(...)
+        '/api/v1/withdrawals' + // path endpoint sesuai setup app.post(...)
         minimalPayload +
         config.api.hilogate.secretKey,
         'utf8'
