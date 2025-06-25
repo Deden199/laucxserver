@@ -41,74 +41,81 @@ export async function retryWithdrawal(req: Request, res: Response) {
 }
 
 
-const md5 = (s: string) =>
-  crypto.createHash('md5').update(s, 'utf8').digest('hex')
-
 export const withdrawalCallback = async (req: Request, res: Response) => {
+  let rawBody: string
+
   try {
-    const raw = (req as any).rawBody as string
-    if (!raw) return res.status(400).send('empty-body')
+    // 1) Baca rawBody & log
+    rawBody = (req as any).rawBody.toString('utf8')
+    logger.debug('[Withdraw Callback] rawBody:', rawBody)
 
-    const got = req.get('X-Signature') || ''
-    const secret = config.api.hilogate.secretKey
-
-    /* ── hitung tiga varian ── */
-    const variants = {
-      BODY  : md5(raw + secret),
-      FULL  : md5('/api/v1/withdrawals' + raw + secret),
-      SHORT : md5('/withdrawals'        + raw + secret),
+    // 2) Verifikasi signature Hilogate
+    const full = JSON.parse(rawBody) as any
+    // minimalPayload: objek yang dipakai di signature (biasanya full.data)
+    const minimalPayload = JSON.stringify(full.data)
+    const expectedSig = crypto
+      .createHash('md5')
+      .update('/api/v1/transactions' + minimalPayload + config.api.hilogate.secretKey, 'utf8')
+      .digest('hex')
+    const gotSig = req.header('X-Signature') || req.header('x-signature') || ''
+    logger.debug(`[Callback] gotSig=${gotSig} expected=${expectedSig}`)
+    if (gotSig !== expectedSig) {
+      throw new Error('Invalid Hilogate signature')
     }
-    const matched = Object.entries(variants).find(([, v]) => v === got)?.[0]
 
-    if (!matched) {
-      logger.error('[WD-CB] sig mismatch', { got, variants })
-      return res.status(400).send('invalid-signature')
-    }
-    logger.debug('[WD-CB] sig OK, variant =', matched)
+    // 3) Extract payload
+    const { ref_id, status, net_amount, completed_at } = full.data || {}
+    if (!ref_id) throw new Error('Missing ref_id')
+    if (net_amount == null) throw new Error('Missing net_amount')
 
-    /* ── parse payload ── */
-    const {
-      ref_id,
-      status,
-      net_amount,
-      completed_at,
-    } = JSON.parse(raw)
-
-    if (!ref_id || net_amount == null)
-      return res.status(422).send('missing-fields')
-
-    /* ── fetch & update ── */
+    // 4) Ambil record WithdrawRequest
     const wr = await prisma.withdrawRequest.findUnique({
-      where : { refId: ref_id },
-      select: { amount: true, partnerClientId: true },
+      where: { refId: ref_id },
+      select: { amount: true, partnerClientId: true }
     })
-    if (!wr) return res.status(404).send('withdraw-not-found')
+    if (!wr) {
+      logger.error(`[Withdraw Callback] WithdrawRequest ${ref_id} not found`)
+      return res.status(404).send('Not found')
+    }
 
-    const up = String(status).toUpperCase()
-    const newStatus: DisbursementStatus =
-      ['FAILED', 'ERROR'].includes(up)      ? 'FAILED' :
-      ['COMPLETED', 'SUCCESS'].includes(up) ? 'COMPLETED' :
-                                              'PENDING'
+    // 5) Map status provider ke enum internal
+    const upStatus = (status as string).toUpperCase()
+    let newStatus: DisbursementStatus
+    switch (upStatus) {
+      case 'FAILED':
+      case 'ERROR':
+        newStatus = DisbursementStatus.FAILED
+        break
+      case 'COMPLETED':
+      case 'SUCCESS':
+        newStatus = DisbursementStatus.COMPLETED
+        break
+      default:
+        newStatus = DisbursementStatus.PENDING
+    }
 
+    // 6) Update WithdrawRequest
     await prisma.withdrawRequest.update({
       where: { refId: ref_id },
-      data : {
-        status     : newStatus,
-        netAmount  : net_amount,
+      data: {
+        status:      newStatus,
+        netAmount:   net_amount,
         completedAt: completed_at ? new Date(completed_at) : undefined,
       },
     })
 
-    if (newStatus === 'FAILED') {
+    // 7) Jika gagal, kembalikan saldo partner
+    if (newStatus === DisbursementStatus.FAILED) {
       await prisma.partnerClient.update({
         where: { id: wr.partnerClientId },
-        data : { balance: { increment: wr.amount } },
+        data: { balance: { increment: wr.amount } },
       })
     }
 
-    return res.json({ ok: true })
+    // 8) Kirim sukses ke Hilogate
+    return res.status(200).json({ message: 'OK' })
   } catch (err: any) {
-    logger.error('[WD-CB] error', err)
-    return res.status(500).json({ error: err.message })
+    logger.error('[Withdraw Callback] Error:', err)
+    return res.status(400).json({ error: err.message })
   }
 }
