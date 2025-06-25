@@ -42,91 +42,79 @@ export async function retryWithdrawal(req: Request, res: Response) {
 
 
 export const withdrawalCallback = async (req: Request, res: Response) => {
-  let rawBody = ''
+  let rawBody: string
 
   try {
-    /* ── 1) RAW BODY ─────────────────────────────────────────────────────── */
-    rawBody = (req as any).rawBody?.toString('utf8') ?? ''
-    logger.info('[WD-CB] raw len:', rawBody.length)
-    logger.info('[WD-CB] raw preview:', rawBody.slice(0, 300))
-    console.error('[WD-CB] RAW-BODY-FIRST-300:', rawBody.slice(0, 300))
+    // 1) Tangkap raw body dari req.rawBody
+    rawBody = (req as any).rawBody.toString('utf8')
+    logger.debug('[Withdraw Callback] rawBody:', rawBody)
 
-    /* ── 2) SIGNATURE CALC / COMPARE ─────────────────────────────────────── */
-    const requestPath    = '/api/v1/withdrawals'
-    const minimalPayload = JSON.stringify(JSON.parse(rawBody).data)
-
-    const stringToSign   = requestPath + minimalPayload + '[[SECRET]]'
-    logger.info('[WD-CB] stringToSign mask:', stringToSign)
-
+    // 2) Parse full payload & hitung signature
+    const full = JSON.parse(rawBody) as any
+    const minimalPayload = JSON.stringify(full.data)               // hanya objek data
     const expectedSig = crypto
       .createHash('md5')
-      .update(requestPath + minimalPayload + config.api.hilogate.secretKey, 'utf8')
+      .update(
+        '/api/v1/withdrawals' +                                 // path sesuai mount
+        minimalPayload +
+        config.api.hilogate.secretKey,
+        'utf8'
+      )
       .digest('hex')
 
-    const expectedDoc = crypto          // versi dokumentasi
-      .createHash('md5')
-      .update(rawBody + config.api.hilogate.secretKey, 'utf8')
-      .digest('hex')
-
-    const gotSig = req.get('X-Signature') || req.get('x-signature') || ''
-
-    logger.info('[WD-CB] gotSig     =', gotSig)
-    logger.info('[WD-CB] expectSig  =', expectedSig, '(PATH+payload)')
-    logger.info('[WD-CB] expectDoc  =', expectedDoc, '(RAW+secret)')
-    logger.info('[WD-CB] req.path   =', req.originalUrl)
-    console.error('[WD-CB] SIGS', { gotSig, expectedSig, expectedDoc })
+    const gotSig = req.header('X-Signature') || req.header('x-signature') || ''
+    logger.debug(`[Withdraw Callback] gotSig=${gotSig} expected=${expectedSig}`)
 
     if (gotSig !== expectedSig) {
-      logger.error('[WD-CB] ❌ Signature mismatch (PATH+payload)')
-      return res.status(400).send('invalid-signature')
+      logger.error('[Withdraw Callback] Invalid signature')
+      return res.status(400).send('Invalid signature')
     }
 
-    /* ── 3) PARSE FIELD-UTAMA ───────────────────────────────────────────── */
-    const { ref_id, status, net_amount, completed_at } = JSON.parse(rawBody).data ?? {}
-    if (!ref_id)            throw new Error('Missing ref_id')
+    // 3) Ekstrak data yang dibutuhkan
+    const { ref_id, status, net_amount, completed_at } = full.data || {}
+    if (!ref_id)      throw new Error('Missing ref_id')
     if (net_amount == null) throw new Error('Missing net_amount')
 
-    /* ── 4) CARI DATA WITHDRAW DI DB ────────────────────────────────────── */
+    // 4) Ambil WithdrawRequest & partnerClientId + amount
     const wr = await prisma.withdrawRequest.findUnique({
-      where:  { refId: ref_id },
+      where: { refId: ref_id },
       select: { amount: true, partnerClientId: true }
     })
     if (!wr) {
-      logger.error('[WD-CB] WithdrawRequest not found:', ref_id)
-      return res.status(404).send('not-found')
+      logger.error(`[Withdraw Callback] WithdrawRequest ${ref_id} not found`)
+      return res.status(404).send('Not found')
     }
 
-    /* ── 5-6) STATUS & UPDATE ───────────────────────────────────────────── */
-    const up = String(status).toUpperCase()
-    const newStatus =
-      ['FAILED', 'ERROR'].includes(up)      ? DisbursementStatus.FAILED     :
-      ['COMPLETED', 'SUCCESS'].includes(up) ? DisbursementStatus.COMPLETED  :
-                                             DisbursementStatus.PENDING
+    // 5) Map status provider ke enum Prisma
+    const up = (status as string).toUpperCase()
+    let newStatus: DisbursementStatus
+    if (['FAILED','ERROR'].includes(up))               newStatus = DisbursementStatus.FAILED
+    else if (['COMPLETED','SUCCESS'].includes(up))     newStatus = DisbursementStatus.COMPLETED
+    else                                               newStatus = DisbursementStatus.PENDING
 
+    // 6) Update WithdrawRequest
     await prisma.withdrawRequest.update({
       where: { refId: ref_id },
-      data : {
-        status     : newStatus,
-        netAmount  : net_amount,
+      data: {
+        status:      newStatus,
+        netAmount:   net_amount,
         completedAt: completed_at ? new Date(completed_at) : undefined,
-      }
+      },
     })
 
-    /* ── 7) ROLLBACK SALDO JIKA GAGAL ───────────────────────────────────── */
+    // 7) Jika gagal, rollback saldo partner
     if (newStatus === DisbursementStatus.FAILED) {
       await prisma.partnerClient.update({
         where: { id: wr.partnerClientId },
-        data : { balance: { increment: wr.amount } },
+        data: { balance: { increment: wr.amount } },
       })
     }
 
-    /* ── 8) DONE ─────────────────────────────────────────────────────────── */
-    logger.info('[WD-CB] ✅ Processed OK:', ref_id)
+    // 8) Kirim OK ke Hilogate
     return res.status(200).json({ message: 'OK' })
 
   } catch (err: any) {
-    logger.error('[WD-CB] Error:', err)
-    console.error('[WD-CB] ERROR-DETAIL:', err)
+    logger.error('[Withdraw Callback] Error:', err)
     return res.status(400).json({ error: err.message })
   }
 }
