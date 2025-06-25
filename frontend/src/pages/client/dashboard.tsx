@@ -16,6 +16,7 @@ type Tx = {
   id:               string
   date:             string
   reference:        string
+  rrn:              string          // ← sudah ada
   amount:           number
   feeLauncx:        number
   netSettle:        number
@@ -128,7 +129,7 @@ export default function ClientDashboardPage() {
   // filter search pada client side
   const filtered = txs.filter(t =>
     t.id.toLowerCase().includes(search.toLowerCase()) ||
-    t.reference.toLowerCase().includes(search.toLowerCase())
+    t.rrn.toLowerCase().includes(search.toLowerCase())
   )
 
   if (loadingSummary) {
@@ -187,7 +188,7 @@ export default function ClientDashboardPage() {
           <input
             type="text"
             className={styles.searchInput}
-            placeholder="Cari TRX ID atau Referensi…"
+            placeholder="Cari TRX ID atau RRN…"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -233,11 +234,11 @@ export default function ClientDashboardPage() {
                         </button>
                       </td>
                       <td className={styles.ellipsis}>
-                        {t.reference}
+                        {t.rrn}
                         <button
                           className={styles.copyBtn}
-                          onClick={() => copyText(t.reference)}
-                          title="Copy Referensi"
+                          onClick={() => copyText(t.rrn)}
+                          title="Copy RRN"
                         >
                           <ClipboardCopy size={14}/>
                         </button>

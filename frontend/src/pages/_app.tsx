@@ -5,25 +5,35 @@ import { useRouter } from 'next/router'
 import AdminLayout from '@/components/layouts/AdminLayout'
 import ClientLayout from '@/components/layouts/ClientLayout'
 
-export default function MyApp({ Component, pageProps }: AppProps) {
+// Extend AppProps supaya Next bisa kenali flag disableLayout
+type MyAppProps = AppProps & {
+  Component: AppProps['Component'] & { disableLayout?: boolean }
+}
+
+export default function MyApp({ Component, pageProps }: MyAppProps) {
   const { pathname } = useRouter()
 
-  // Halaman-halaman yang tidak perlu layout
-  const noAdminLayout   = ['/login']
-  const noClientLayout  = ['/client/login']
+  // Kalau Component punya flag disableLayout, langsung render tanpa layout apapun
+  if (Component.disableLayout) {
+    return <Component {...pageProps} />
+  }
 
-  // 1) Jika ini halaman login admin, render tanpa layout
+  // Halaman-halaman yang tidak perlu layout khusus
+  const noAdminLayout  = ['/login']
+  const noClientLayout = ['/client/login']
+
+  // 1) Halaman login admin
   if (noAdminLayout.includes(pathname)) {
     return <Component {...pageProps} />
   }
 
-  // 2) Jika URL diawali /client
+  // 2) Semua route `/client/*`
   if (pathname.startsWith('/client')) {
-    // 2a) /client/login juga tanpa layout
+    // 2a) Halaman login client
     if (noClientLayout.includes(pathname)) {
       return <Component {...pageProps} />
     }
-    // 2b) halaman client lainnya → ClientLayout
+    // 2b) Halaman client lainnya
     return (
       <ClientLayout>
         <Component {...pageProps} />
@@ -31,7 +41,7 @@ export default function MyApp({ Component, pageProps }: AppProps) {
     )
   }
 
-  // 3) Halaman selain /client dan bukan /login → AdminLayout
+  // 3) Semua selain /client dan bukan /login → pakai AdminLayout
   return (
     <AdminLayout>
       <Component {...pageProps} />

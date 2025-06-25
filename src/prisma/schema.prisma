@@ -152,6 +152,7 @@ model Order {
   settlementStatus String?
   status           String   @default("PENDING")
   pendingAmount    Float?   // setelah SUCCESS sebelum payout
+  rrn              String?
   settlementAmount Float?   // net_amount setelah payout
   fee3rdParty      Float?   // payment_gateway_fee
   feeLauncx        Float?   // platform fee

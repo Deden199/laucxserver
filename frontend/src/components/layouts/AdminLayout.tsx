@@ -1,65 +1,92 @@
-'use client';
+// File: frontend/src/components/AdminLayout.tsx
+'use client'
 
-import { ReactNode, useState, useEffect } from 'react';
-import Link from 'next/link';
-import styles from './Layout.module.css';
+import { ReactNode, useState, useEffect } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { Menu, Home, Users, Settings, Box, LogOut } from 'lucide-react'
+import { motion } from 'framer-motion'
+import styles from './Layout.module.css'
 
-interface LayoutProps { children: ReactNode; }
+interface AdminLayoutProps {
+  children: ReactNode
+}
 
-export default function Layout({ children }: LayoutProps) {
-  const [open, setOpen] = useState(false);
+const navItems = [
+  { label: 'Dashboard',    href: '/dashboard',            Icon: Home },
+  { label: 'Merchants',    href: '/admin/merchants',   Icon: Users },
+  { label: 'API Clients',  href: '/admin/clients',     Icon: Box },
+  { label: 'PG Providers', href: '/admin/pg-providers', Icon: Settings },
+]
 
-  // Lock scroll saat sidebar terbuka
+export default function AdminLayout({ children }: AdminLayoutProps) {
+  const [open, setOpen] = useState(false)
+  const pathname = usePathname()
+
   useEffect(() => {
-    document.body.style.overflow = open ? 'hidden' : '';
-    return () => { document.body.style.overflow = ''; };
-  }, [open]);
-
-  const nav = [
-    { label: 'Dashboard',    href: '/dashboard' },
-    { label: 'Merchants',    href: '/admin/merchants' },
-    
-    { label: 'API Clients',  href: '/admin/clients' },
-    { label: 'PG Providers', href: '/admin/pg-providers' },
-  ];
+    document.body.style.overflow = open ? 'hidden' : ''
+    return () => { document.body.style.overflow = '' }
+  }, [open])
 
   return (
     <div className={styles.container}>
-      <aside className={`${styles.sidebar} ${open ? styles.sidebarOpen : ''}`}>
-        <div className={styles.logo}>Admin Panel</div>
+      {/* Sidebar */}
+      <motion.aside
+        className={styles.sidebar}
+        initial={{ width: open ? 240 : 72 }}
+        animate={{ width: open ? 240 : 72, opacity: open ? 1 : 0.95 }}
+        transition={{ duration: 0.3 }}
+      >
+        <div className={styles.logo} onClick={() => setOpen(o => !o)}>
+          <span className={styles.logoIcon}>🛠️</span>
+          {open && <span className={styles.logoText}>ADMIN PANEL</span>}
+        </div>
+
         <nav className={styles.nav}>
-          {nav.map(item => (
+          {navItems.map(({ label, href, Icon }) => (
             <Link
-              key={item.href}
-              href={item.href}
-              className={styles.navItem}
+              key={href}
+              href={href}
+              className={`${styles.navItem} ${pathname === href ? styles.active : ''}`}
               onClick={() => setOpen(false)}
             >
-              {item.label}
+              <Icon size={20} />
+              {open && <span className={styles.navText}>{label}</span>}
             </Link>
           ))}
         </nav>
-      </aside>
 
-      <div
-        className={`${styles.backdrop} ${open ? styles.backdropVisible : ''}`}
-        onClick={() => setOpen(false)}
-      />
+        {open && (
+          <button className={styles.logoutBtn} onClick={() => {/* TODO: handle logout */}}>
+            <LogOut size={18} />
+            <span>Logout</span>
+          </button>
+        )}
+      </motion.aside>
 
+      {/* Backdrop for mobile */}
+      {open && <div className={styles.backdrop} onClick={() => setOpen(false)} />}
+
+      {/* Main content area */}
       <div className={styles.main}>
         <header className={styles.header}>
           <button
-            className={styles.burger}
+            className={styles.toggleBtn}
             onClick={() => setOpen(o => !o)}
-            aria-label="Toggle menu"
+            aria-label="Toggle sidebar"
           >
-            {open ? '✕' : '☰'}
+            <Menu size={24} />
           </button>
-          <h1 className={styles.title}>Welcome, Admin</h1>
-          <button className={styles.actionBtn}>New Merchant</button>
+          <h1 className={styles.title}>Admin Dashboard</h1>
+          <div className={styles.headerRight}>
+            <Settings size={20} className={styles.iconBtn} />
+          </div>
         </header>
-        <main className={styles.content}>{children}</main>
+
+        <main className={styles.content}>
+          {children}
+        </main>
       </div>
     </div>
-  );
+  )
 }

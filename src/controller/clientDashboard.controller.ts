@@ -55,6 +55,7 @@ export async function getClientDashboard(req: ClientAuthRequest, res: Response) 
       settlementAmount: true,
       pendingAmount:    true,
       status:           true,
+      rrn:              true,
       createdAt:        true
     }
   })
@@ -79,6 +80,7 @@ export async function getClientDashboard(req: ClientAuthRequest, res: Response) 
       id:               o.id,
       date:             o.createdAt.toISOString(),
       reference:        o.qrPayload ?? '',
+      rrn:              o.rrn ?? '',
       amount:           o.amount,
       feeLauncx:        o.feeLauncx ?? 0,
       netSettle,
@@ -122,7 +124,8 @@ export async function exportClientTransactions(req: ClientAuthRequest, res: Resp
       pendingAmount:    true,
       settlementAmount: true,
       feeLauncx:        true,
-      status:           true
+      status:           true,
+      rrn:              true
     }
   })
 
@@ -131,6 +134,8 @@ export async function exportClientTransactions(req: ClientAuthRequest, res: Resp
   ws.columns = [
     { header: 'Tanggal', key: 'date',            width: 20 },
     { header: 'ID',      key: 'id',              width: 36 },
+    { header: 'RRN',     key: 'rrn',             width: 24 },  // ← **ADDED**: kolom header RRN
+
     { header: 'Jumlah',  key: 'amount',          width: 15 },
     { header: 'Pending', key: 'pendingAmount',   width: 15 },
     { header: 'Settled', key: 'settlementAmount',width: 15 },
@@ -141,6 +146,7 @@ export async function exportClientTransactions(req: ClientAuthRequest, res: Resp
     ws.addRow({
       date:             o.createdAt.toISOString(),
       id:               o.id,
+      rrn:              o.rrn ?? '',  // ← **ADDED**: isi data RRN
       amount:           o.amount,
       pendingAmount:    o.pendingAmount ?? 0,
       settlementAmount: o.settlementAmount ?? 0,
