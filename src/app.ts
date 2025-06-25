@@ -39,16 +39,7 @@ app.use((_, res, next) => {
   res.set('Expires', '0');
   next();
 });
-app.post(
-  '/api/v1/withdrawals/callback',
-  express.raw({
-    limit: '20kb',
-    type: () => true,
-    verify: (req, _res, buf: Buffer) => { (req as any).rawBody = buf }
-  }),
-  express.json(),           // agar handler bebas parse JSON lagi jika perlu
-  withdrawalCallback        // handler yang sudah Anda tulis
-)
+
 // Raw parser for Hilogate transaction webhook
 app.post(
   '/api/v1/transactions/callback',
@@ -59,6 +50,17 @@ app.post(
   }),
   express.json(),
   transactionCallback
+);
+app.post(
+  '/api/v1/withdrawals/callback',
+  express.raw({
+    type : '*/*',              // terima JSON / octet-stream apa saja
+    limit: '2mb',              // payload WD aman
+    verify: (req, _res, buf) => {
+      (req as any).rawBody = buf.toString('utf8');      // simpan mentah
+    },
+  }),
+  withdrawalCallback           // ⛔ TANPA express.json()
 );
 
 // Raw parser for Hilogate withdrawal webhook
