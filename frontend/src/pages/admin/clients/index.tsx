@@ -5,7 +5,6 @@ import api from '@/lib/api'
 import { useRequireAuth } from '@/hooks/useAuth'
 import styles from './apiClients.module.css'
 
-// Tambahkan property feePercent dan feeFlat
 interface Client {
   id: string
   name: string
@@ -24,16 +23,18 @@ type CreateResp = {
 export default function ApiClientsPage() {
   useRequireAuth()
 
-  const [clients, setClients]       = useState<Client[]>([])
-  const [newName, setNewName]       = useState('')
-  const [newEmail, setNewEmail]     = useState('')
+  const [clients, setClients]             = useState<Client[]>([])
+  const [newName, setNewName]             = useState('')
+  const [newEmail, setNewEmail]           = useState('')
   const [newFeePercent, setNewFeePercent] = useState<number>(0.5)
-  const [newFeeFlat, setNewFeeFlat] = useState<number>(0)
-  const [err, setErr]               = useState('')
-  const [loading, setLoading]       = useState(false)
-  const [creds, setCreds]           = useState<CreateResp|null>(null)
+  const [newFeeFlat, setNewFeeFlat]       = useState<number>(0)
+  const [err, setErr]                     = useState('')
+  const [loading, setLoading]             = useState(false)
+  const [creds, setCreds]                 = useState<CreateResp | null>(null)
 
-  useEffect(() => { loadClients() }, [])
+  useEffect(() => {
+    loadClients()
+  }, [])
 
   async function loadClients() {
     try {
@@ -53,10 +54,10 @@ export default function ApiClientsPage() {
     setLoading(true)
     try {
       const res = await api.post<CreateResp>('/admin/clients', {
-        name: newName.trim(),
-        email: newEmail.trim(),
+        name:       newName.trim(),
+        email:      newEmail.trim(),
         feePercent: newFeePercent,
-        feeFlat: newFeeFlat,
+        feeFlat:    newFeeFlat,
       })
       setClients(cs => [res.data.client, ...cs])
       setCreds(res.data)
@@ -103,7 +104,7 @@ export default function ApiClientsPage() {
           min={0}
           max={100}
           value={newFeePercent}
-          onChange={e => setNewFeePercent(parseFloat(e.target.value))}
+          onChange={e => setNewFeePercent(parseFloat(e.target.value) || 0)}
         />
         <input
           className={styles.input}
@@ -112,7 +113,7 @@ export default function ApiClientsPage() {
           step="0.01"
           min={0}
           value={newFeeFlat}
-          onChange={e => setNewFeeFlat(parseFloat(e.target.value))}
+          onChange={e => setNewFeeFlat(parseFloat(e.target.value) || 0)}
         />
         <button
           className={styles.btnAdd}
@@ -122,6 +123,7 @@ export default function ApiClientsPage() {
           {loading ? 'Menambahkan…' : 'Tambah Client'}
         </button>
       </div>
+
       {err && <div className={styles.error}>{err}</div>}
 
       {creds && (
@@ -146,41 +148,40 @@ export default function ApiClientsPage() {
             </tr>
           </thead>
           <tbody>
-            {clients.length === 0
-              ? (
-                <tr>
-                  <td colSpan={6} className="text-center p-4 text-gray-500">
-                    Belum ada client
+            {clients.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="text-center p-4 text-gray-500">
+                  Belum ada client
+                </td>
+              </tr>
+            ) : (
+              clients.map(c => (
+                <tr key={c.id}>
+                  <td>{c.name}</td>
+                  <td className="font-mono text-sm">
+                    {c.apiKey}
+                    <button className={styles.copyBtn} onClick={() => copy(c.apiKey)}>Copy</button>
+                  </td>
+                  <td className="font-mono text-sm">
+                    {c.apiSecret}
+                    <button className={styles.copyBtn} onClick={() => copy(c.apiSecret)}>Copy</button>
+                  </td>
+                  <td>{c.feePercent.toFixed(1)}</td>
+                  <td>{c.feeFlat.toFixed(2)}</td>
+                  <td>
+                    <a
+                      className="text-blue-600 hover:underline"
+                      href={`/admin/clients/${c.id}`}
+                    >
+                      Manage
+                    </a>
                   </td>
                 </tr>
-              ) : (
-                clients.map(c => (
-                  <tr key={c.id}>
-                    <td>{c.name}</td>
-                    <td className="font-mono text-sm">
-                      {c.apiKey}
-                      <button className={styles.copyBtn} onClick={() => copy(c.apiKey)}>Copy</button>
-                    </td>
-                    <td className="font-mono text-sm">
-                      {c.apiSecret}
-                      <button className={styles.copyBtn} onClick={() => copy(c.apiSecret)}>Copy</button>
-                    </td>
-                    <td>{c.feePercent.toFixed(1)}</td>
-                    <td>{c.feeFlat.toFixed(2)}</td>
-                    <td>
-                      <a
-                        className="text-blue-600 hover:underline"
-                        href={`/admin/clients/${c.id}/pg`}
-                      >
-                        Manage
-                      </a>
-                    </td>
-                  </tr>
-                ))
-              )}
+              ))
+            )}
           </tbody>
         </table>
       </div>
     </div>
-  )
+)
 }

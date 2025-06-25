@@ -1,100 +1,186 @@
-/* frontend/src/pages/admin/api-clients.tsx */
+'use client'
 
 import { useEffect, useState } from 'react'
 import api from '@/lib/api'
 import { useRequireAuth } from '@/hooks/useAuth'
+import styles from './apiClients.module.css'
 
-type Client = {
-  id:           string
-  name:         string
-  apiKey:       string
-  feePercent:   number
-  feeFlat:      number
+interface Client {
+  id: string
+  name: string
+  apiKey: string
+  apiSecret: string
+  isActive: boolean
+  feePercent: number
+  feeFlat: number
 }
 
-export default function APIClientsPage() {
+type CreateResp = {
+  client: Client
+  defaultUser: { email: string; password: string }
+}
+
+export default function ApiClientsPage() {
   useRequireAuth()
 
-  const [clients, setClients]       = useState<Client[]>([])
-  const [name, setName]             = useState('')
-  const [feePercent, setFeePercent] = useState(0.5)
-  const [feeFlat, setFeeFlat]       = useState(0)
+  const [clients, setClients]             = useState<Client[]>([])
+  const [newName, setNewName]             = useState('')
+  const [newEmail, setNewEmail]           = useState('')
+  const [newFeePercent, setNewFeePercent] = useState<number>(0.5)
+  const [newFeeFlat, setNewFeeFlat]       = useState<number>(0)
+  const [err, setErr]                     = useState('')
+  const [loading, setLoading]             = useState(false)
+  const [creds, setCreds]                 = useState<CreateResp|null>(null)
 
-  useEffect(() => {
-    api.get<Client[]>('/admin/api-clients')
-      .then(r => setClients(r.data))
-      .catch(console.error)
-  }, [])
+  useEffect(() => { loadClients() }, [])
 
-  const create = async () => {
-    if (!name.trim()) return
-    // send fee fields too
-    const payload = { name, feePercent, feeFlat }
-    const r = await api.post<Client>('/admin/api-clients', payload)
-    setClients(cl => [...cl, r.data])
-    setName('')
-    setFeePercent(0.5)
-    setFeeFlat(0)
+  async function loadClients() {
+    try {
+      const res = await api.get<Client[]>('/admin/clients')
+      setClients(res.data)
+    } catch {
+      setErr('Gagal memuat daftar client')
+    }
+  }
+
+  async function addClient() {
+    if (!newName.trim() || !newEmail.trim()) {
+      setErr('Nama dan email tidak boleh kosong')
+      return
+    }
+    setErr('')
+    setLoading(true)
+    try {
+      const res = await api.post<CreateResp>('/admin/clients', {
+        name:       newName.trim(),
+        email:      newEmail.trim(),
+        feePercent: newFeePercent,
+        feeFlat:    newFeeFlat,
+      })
+      setClients(cs => [res.data.client, ...cs])
+      setCreds(res.data)
+      setNewName('')
+      setNewEmail('')
+      setNewFeePercent(0.5)
+      setNewFeeFlat(0)
+    } catch (e: any) {
+      setErr(e.response?.data?.error || 'Gagal menambah client')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function copy(txt: string) {
+    navigator.clipboard.writeText(txt)
+      .then(() => alert('Disalin!'))
+      .catch(() => alert('Gagal menyalin'))
   }
 
   return (
-    <div className="p-8">
-      <h1 className="text-3xl font-bold mb-4">Partner Clients</h1>
+    <div className={styles.container}>
+      <h1 className={styles.heading}>API Clients</h1>
 
-      <div className="flex mb-6 space-x-2">
+      <div className={styles.formRow}>
         <input
-          value={name}
-          onChange={e => setName(e.target.value)}
-          className="border px-3 py-2 rounded w-48"
-          placeholder="Client name"
+          className={styles.input}
+          placeholder="Nama client baru"
+          value={newName}
+          onChange={e => setNewName(e.target.value)}
         />
         <input
+          className={styles.input}
+          placeholder="Email partner"
+          type="email"
+          value={newEmail}
+          onChange={e => setNewEmail(e.target.value)}
+        />
+        <input
+          className={styles.input}
+          placeholder="Fee %"
           type="number"
           step="0.1"
           min={0}
           max={100}
-          value={feePercent}
-          onChange={e => setFeePercent(parseFloat(e.target.value))}
-          className="border px-3 py-2 rounded w-32"
-          placeholder="Fee %"
+          value={newFeePercent}
+          onChange={e => setNewFeePercent(parseFloat(e.target.value) || 0)}
         />
         <input
+          className={styles.input}
+          placeholder="Fee flat"
           type="number"
           step="0.01"
           min={0}
-          value={feeFlat}
-          onChange={e => setFeeFlat(parseFloat(e.target.value))}
-          className="border px-3 py-2 rounded w-32"
-          placeholder="Fee flat"
+          value={newFeeFlat}
+          onChange={e => setNewFeeFlat(parseFloat(e.target.value) || 0)}
         />
         <button
-          onClick={create}
-          className="px-4 py-2 bg-blue-600 text-white rounded"
+          className={styles.btnAdd}
+          onClick={addClient}
+          disabled={loading}
         >
-          Create
+          {loading ? 'Menambahkan…' : 'Tambah Client'}
         </button>
       </div>
 
-      <table className="w-full bg-white shadow rounded">
-        <thead className="bg-gray-100">
-          <tr>
-            <th className="px-4 py-2 text-left">Name</th>
-            <th className="px-4 py-2 text-left">API Key</th>
-            <th className="px-4 py-2 text-left">Fee %</th>
-            <th className="px-4 py-2 text-left">Fee Flat</th>
-          </tr>
-        </thead>
-        <tbody>
-          {clients.map(c => (
-            <tr key={c.id} className="border-t">
-              <td className="px-4 py-2">{c.name}</td>
-              <td className="px-4 py-2 break-all">{c.apiKey}</td>
-              <td className="px-4 py-2">{c.feePercent.toFixed(1)}</td>
-              <td className="px-4 py-2">{c.feeFlat.toFixed(2)}</td>
+      {err && <div className={styles.error}>{err}</div>}
+
+      {creds && (
+        <div className={styles.popup}>
+          <h3>Default Partner Credentials</h3>
+          <p>Email: <code>{creds.defaultUser.email}</code></p>
+          <p>Password: <code>{creds.defaultUser.password}</code></p>
+          <button onClick={() => setCreds(null)}>Tutup</button>
+        </div>
+      )}
+
+      <div className={styles.tableContainer}>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>API Key</th>
+              <th>API Secret</th>
+              <th>Fee %</th>
+              <th>Fee Flat</th>
+              <th>Actions</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {clients.length === 0
+              ? (
+                <tr>
+                  <td colSpan={6} className="text-center p-4 text-gray-500">
+                    Belum ada client
+                  </td>
+                </tr>
+              ) : (
+                clients.map(c => (
+                  <tr key={c.id}>
+                    <td>{c.name}</td>
+                    <td className="font-mono text-sm">
+                      {c.apiKey}
+                      <button className={styles.copyBtn} onClick={() => copy(c.apiKey)}>Copy</button>
+                    </td>
+                    <td className="font-mono text-sm">
+                      {c.apiSecret}
+                      <button className={styles.copyBtn} onClick={() => copy(c.apiSecret)}>Copy</button>
+                    </td>
+                    <td>{c.feePercent.toFixed(1)}</td>
+                    <td>{c.feeFlat.toFixed(2)}</td>
+                    <td>
+                      <a
+                        className="text-blue-600 hover:underline"
+                        href={`/admin/clients/${c.id}`}
+                      >
+                        Manage
+                      </a>
+                    </td>
+                  </tr>
+                ))
+              )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

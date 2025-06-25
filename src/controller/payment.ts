@@ -67,8 +67,6 @@ export const transactionCallback = async (req: Request, res: Response) => {
       ref_id: orderId,
       status: pgStatus,
       net_amount,
-      payment_gateway_fee = 0,
-      fee = 0,
       qr_string,
       settlement_status
     } = full
@@ -100,8 +98,6 @@ export const transactionCallback = async (req: Request, res: Response) => {
         amount:           net_amount,
         pendingAmount:    isInitSuccess ? net_amount : null,
         settlementAmount: isInitSuccess ? null : net_amount,
-        fee3rdParty:      payment_gateway_fee,
-        feeLauncx:        fee,
         qrPayload:        qr_string ?? null,
         updatedAt:        new Date()
       }
@@ -136,7 +132,7 @@ export const checkPaymentStatus = async (req: AuthRequest, res: Response) => {
 export const createOrder = async (req: Request, res: Response) => {
   try {
     // ambil clientId yang di-inject oleh apiKeyAuth
-    const userId = (req as any).clientId as string
+    const userId = (req as any).partnerClientId as string
     const amount = Number(req.body.amount)
     if (isNaN(amount) || amount <= 0) {
       return res.status(400).json(createErrorResponse('`amount` harus > 0'))

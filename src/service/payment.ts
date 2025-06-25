@@ -338,10 +338,10 @@ export const createOrder = async (payload: OrderRequest): Promise<OrderResponse>
     const { qrImage, totalAmount, referenceNo } = direct;
     const checkoutUrl = `${config.api.baseUrl}/api/v1/checkout/${referenceNo}`;
 
-    // Platform fee only
+    // Hitung platform fee saja
     const pc = await prisma.partnerClient.findUnique({ where: { id: payload.userId } });
     if (!pc) throw new Error('PartnerClient tidak ditemukan');
-    const feePlatform = Math.round(totalAmount * (pc.feePercent / 100) + pc.feeFlat);
+    const feePlatform      = Math.round(totalAmount * (pc.feePercent / 100) + pc.feeFlat);
     const settlementAmount = totalAmount - feePlatform;
 
     await prisma.order.create({
@@ -367,13 +367,13 @@ export const createOrder = async (payload: OrderRequest): Promise<OrderResponse>
   const providers = await getActiveProvidersForClient(payload.userId);
   if (!providers.length) throw new Error(`No active payment channels for user ${payload.userId}`);
 
-  // Choose provider by override or randomly
+  // Pilih provider (override atau acak)
   let channel = forced
     ? providers.find(p => p.name.toLowerCase() === forced)
     : providers[Math.floor(Math.random() * providers.length)];
   if (!channel) throw new Error(`Provider override "${forced}" tidak tersedia`);
 
-  // Generate QR or checkout URL
+  // Generate QR atau checkout URL
   const orderId = generateRandomId();
   let qrPayload: string | undefined;
   let checkoutUrl: string;
@@ -384,24 +384,11 @@ export const createOrder = async (payload: OrderRequest): Promise<OrderResponse>
     checkoutUrl = await channel.generateCheckoutUrl({ orderId, amount: payload.amount });
   }
 
-  // Platform fee
+  // Hitung platform fee saja untuk semua provider
   const pc = await prisma.partnerClient.findUnique({ where: { id: payload.userId } });
   if (!pc) throw new Error('PartnerClient tidak ditemukan');
-  const feePlatform = Math.round(payload.amount * (pc.feePercent / 100) + pc.feeFlat);
-
-  // Gateway fee from ClientPG junction
-  // 1) lookup PGProvider by name
-  const pg = await prisma.pGProvider.findUnique({ where: { name: channel.name } });
-  if (!pg) throw new Error(`PGProvider ${channel.name} tidak ditemukan`);
-  // 2) lookup clientPG
-  const cp = await prisma.clientPG.findUnique({
-    where: { clientId_pgProviderId: { clientId: pc.id, pgProviderId: pg.id } }
-  });
-  const feeGateway = cp ? Math.round(payload.amount * (cp.clientFee / 100)) : 0;
-
-  // Total fee & settlement
-  const totalFee = feePlatform + feeGateway;
-  const settlementAmount = payload.amount - totalFee;
+  const feePlatform      = Math.round(payload.amount * (pc.feePercent / 100) + pc.feeFlat);
+  const settlementAmount = payload.amount - feePlatform;
 
   await prisma.order.create({
     data: {
@@ -414,7 +401,7 @@ export const createOrder = async (payload: OrderRequest): Promise<OrderResponse>
       qrPayload,
       checkoutUrl,
       feeLauncx:        feePlatform,
-      fee3rdParty:      feeGateway,
+      fee3rdParty:      0,
       settlementAmount,
     }
   });
