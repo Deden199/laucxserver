@@ -42,48 +42,54 @@ export async function retryWithdrawal(req: Request, res: Response) {
 
 
 const md5 = (s: string) =>
-  crypto.createHash('md5').update(s, 'utf8').digest('hex');
+  crypto.createHash('md5').update(s, 'utf8').digest('hex')
 
 export const withdrawalCallback = async (req: Request, res: Response) => {
   try {
-    /* 1 ▸ body & signature */
-    const raw = (req as any).rawBody as string;
-    if (!raw) return res.status(400).send('empty-body');
+    const raw = (req as any).rawBody as string
+    if (!raw) return res.status(400).send('empty-body')
 
-    const got = req.get('X-Signature') || '';
-    const expected = md5(raw + config.api.hilogate.secretKey);   // BODY + SECRET
+    const got = req.get('X-Signature') || ''
+    const secret = config.api.hilogate.secretKey
 
-    if (got !== expected) {
-      logger.error('[WD-CB] signature mismatch');
-      return res.status(400).send('invalid-signature');
+    /* ── hitung tiga varian ── */
+    const variants = {
+      BODY  : md5(raw + secret),
+      FULL  : md5('/api/v1/withdrawals' + raw + secret),
+      SHORT : md5('/withdrawals'        + raw + secret),
     }
+    const matched = Object.entries(variants).find(([, v]) => v === got)?.[0]
 
-    /* 2 ▸ parse payload (top-level) */
+    if (!matched) {
+      logger.error('[WD-CB] sig mismatch', { got, variants })
+      return res.status(400).send('invalid-signature')
+    }
+    logger.debug('[WD-CB] sig OK, variant =', matched)
+
+    /* ── parse payload ── */
     const {
       ref_id,
       status,
       net_amount,
       completed_at,
-    } = JSON.parse(raw);
+    } = JSON.parse(raw)
 
     if (!ref_id || net_amount == null)
-      return res.status(422).send('missing-fields');
+      return res.status(422).send('missing-fields')
 
-    /* 3 ▸ fetch request */
+    /* ── fetch & update ── */
     const wr = await prisma.withdrawRequest.findUnique({
       where : { refId: ref_id },
       select: { amount: true, partnerClientId: true },
-    });
-    if (!wr) return res.status(404).send('withdraw-not-found');
+    })
+    if (!wr) return res.status(404).send('withdraw-not-found')
 
-    /* 4 ▸ map status */
-    const up = String(status).toUpperCase();
+    const up = String(status).toUpperCase()
     const newStatus: DisbursementStatus =
       ['FAILED', 'ERROR'].includes(up)      ? 'FAILED' :
       ['COMPLETED', 'SUCCESS'].includes(up) ? 'COMPLETED' :
-                                              'PENDING';
+                                              'PENDING'
 
-    /* 5 ▸ update DB */
     await prisma.withdrawRequest.update({
       where: { refId: ref_id },
       data : {
@@ -91,19 +97,18 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
         netAmount  : net_amount,
         completedAt: completed_at ? new Date(completed_at) : undefined,
       },
-    });
+    })
 
-    /* 6 ▸ rollback saldo jika gagal */
     if (newStatus === 'FAILED') {
       await prisma.partnerClient.update({
         where: { id: wr.partnerClientId },
         data : { balance: { increment: wr.amount } },
-      });
+      })
     }
 
-    return res.json({ ok: true });
+    return res.json({ ok: true })
   } catch (err: any) {
-    logger.error('[WD-CB] error:', err);
-    return res.status(500).json({ error: err.message });
+    logger.error('[WD-CB] error', err)
+    return res.status(500).json({ error: err.message })
   }
-};
+}
