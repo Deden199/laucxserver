@@ -2,8 +2,6 @@ import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
-import swaggerJsdoc from 'swagger-jsdoc';
-import swaggerUi from 'swagger-ui-express';
 import cron from 'node-cron';
 import { scheduleSettlementChecker } from './cron/settlement'
 import subMerchantRoutes from './route/admin/subMerchant.routes';
@@ -15,7 +13,7 @@ import { withdrawalCallback } from './controller/withdrawals.controller'
 import ewalletRoutes from './route/ewallet.routes';
 import authRoutes from './route/auth.routes';
 import paymentRouter from './route/payment.routes';
-import disbursementRouter from './route/disbursement.routes';
+// import disbursementRouter from './route/disbursement.routes';
 import paymentController, { transactionCallback } from './controller/payment';
 
 import merchantDashRoutes from './route/merchant/dashboard.routes';
@@ -25,7 +23,7 @@ import withdrawalRoutes from './route/withdrawals.routes';  // add withdrawal ro
 import apiKeyAuth from './middleware/apiKeyAuth';
 import { authMiddleware } from './middleware/auth';
 
-import { config, swaggerConfig } from './config';
+import { config } from './config';
 import logger from './logger';
 import requestLogger from './middleware/log';
 
@@ -72,7 +70,6 @@ app.post(
 app.set('trust proxy', 1);
 app.use(helmet());
 app.use(rateLimit({ windowMs: 60_000, max: 100, message: 'Too many requests, try again later.' }));
-app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerJsdoc(swaggerConfig)));
 
 const allowedOrigins = [
   'https://launcx.com',
@@ -81,9 +78,9 @@ const allowedOrigins = [
   'https://g2f.launcx.com',
   'https://payment.launcx.com',
   'https://c1.launcx.com',
-  'http://localhost:3000',
-  'http://localhost:3001',
-  `http://localhost:${config.api.port}`,
+  // 'http://localhost:3000',
+  // 'http://localhost:3001',
+  // `http://localhost:${config.api.port}`,
 ];
 app.use(cors({
   origin: (origin, cb) => cb(null, !origin || allowedOrigins.includes(origin)),
@@ -100,7 +97,7 @@ app.use('/api/v1', ewalletRoutes);         // public e-wallet endpoints
 
 /* ========== 2. PROTECTED – API-KEY (SERVER-TO-SERVER) ========== */
 app.use('/api/v1/payments', apiKeyAuth, paymentRouter);
-app.use('/api/v1/disbursements', apiKeyAuth, disbursementRouter);
+// app.use('/api/v1/disbursements', apiKeyAuth, disbursementRouter);
 
 /* ========== 3. PROTECTED – ADMIN PANEL ========== */
 app.use('/api/v1/admin/merchants', authMiddleware, adminMerchantRoutes);
@@ -125,8 +122,7 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 scheduleSettlementChecker()
 // Start server
 app.listen(config.api.port, () => {
-  console.log(`🚀 Server listening on http://localhost:${config.api.port}/api/v1`);
-  console.log(`🔖 Swagger UI available at http://localhost:${config.api.port}/swagger`);
+
 });
 
 export default app;

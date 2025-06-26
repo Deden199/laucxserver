@@ -7,27 +7,32 @@ export interface ClientAuthRequest extends Request {
   clientUserId?: string
 }
 
-export function requireClientAuth(req: ClientAuthRequest, res: Response, next: NextFunction) {
-  const header = req.headers.authorization
-  console.log('[ClientAuth] Authorization header:', header)
-
-  if (!header || !header.startsWith('Bearer ')) {
-    console.log('[ClientAuth] Missing or malformed Authorization header')
-    return res.status(401).json({ error: 'Missing or malformed Authorization header' })
+/**
+ * Middleware to verify Partner Client JWT.
+ */
+export function requireClientAuth(
+  req: ClientAuthRequest,
+  res: Response,
+  next: NextFunction
+) {
+  const authHeader = req.header('Authorization')
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' })
   }
 
-  const token = header.slice(7)
+  const token = authHeader.slice(7)
+  let payload: any
   try {
-    const payload: any = jwt.verify(token, config.api.jwtSecret)
-    console.log('[ClientAuth] JWT payload:', payload)
-    if (payload.role !== 'PARTNER_CLIENT') {
-      console.log('[ClientAuth] Invalid role:', payload.role)
-      return res.status(401).json({ error: 'Invalid role' })
-    }
-    req.clientUserId = payload.sub
-    next()
-  } catch (err: any) {
-    console.log('[ClientAuth] JWT verify error:', err.message)
+    payload = jwt.verify(token, config.api.jwtSecret) as Record<string, any>
+  } catch {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }
+
+  if (typeof payload.sub !== 'string') {
+    return res.status(401).json({ error: 'Invalid token subject' })
+  }
+
+  // Attach client user ID for downstream handlers
+  req.clientUserId = payload.sub
+  next()
 }

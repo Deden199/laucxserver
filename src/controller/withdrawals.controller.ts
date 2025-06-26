@@ -6,40 +6,87 @@ import { config } from '../config'
 import logger from '../logger'
 import { DisbursementStatus } from '@prisma/client'
 
-// List withdrawal requests (WithdrawRequest)
 export async function listWithdrawals(req: Request, res: Response) {
-  const { status, date_from, date_to, page = 1, limit = 20 } = req.query
-  const where: any = {}
-  if (status) where.status = status as string
+  const clientId = (req as any).client.id as string;
+  const { status, date_from, date_to, page = '1', limit = '20' } = req.query;
+
+  const where: any = { partnerClientId: clientId };
+  if (status)       where.status = status as string;
   if (date_from || date_to) {
-    where.createdAt = {}
-    if (date_from) where.createdAt.gte = new Date(date_from as string)
-    if (date_to)   where.createdAt.lte = new Date(date_to as string)
+    where.createdAt = {};
+    if (date_from) where.createdAt.gte = new Date(date_from as string);
+    if (date_to)   where.createdAt.lte = new Date(date_to as string);
   }
-  const pageNum = Number(page)
-  const pageSize = Number(limit)
 
-  const data = await prisma.withdrawRequest.findMany({
-    where,
-    skip: (pageNum - 1) * pageSize,
-    take: pageSize,
-    orderBy: { createdAt: 'desc' },
-  })
-  const total = await prisma.withdrawRequest.count({ where })
-  res.json({ data, total })
+  const pageNum  = Math.max(1, parseInt(page as string, 10));
+  const pageSize = Math.min(100, parseInt(limit as string, 10));
+
+  // ambil fields penting termasuk bankName & accountNumber
+  const [rows, total] = await Promise.all([
+    prisma.withdrawRequest.findMany({
+      where,
+      skip:  (pageNum - 1) * pageSize,
+      take:  pageSize,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        refId:          true,
+        bankName:       true,
+        accountNumber:  true,
+        amount:         true,
+        status:         true,
+        createdAt:      true,
+        completedAt:    true,
+      },
+    }),
+    prisma.withdrawRequest.count({ where }),
+  ]);
+
+  const data = rows.map(w => ({
+    refId:         w.refId,
+    bankName:      w.bankName,
+    accountNumber: w.accountNumber,
+    amount:        w.amount,
+    status:        w.status,
+    date:          w.createdAt.toISOString(),          // jika UI pakai field date
+    createdAt:     w.createdAt.toISOString(),          // atau tetap createdAt
+    completedAt:   w.completedAt ? w.completedAt.toISOString() : null,
+  }));
+
+  return res.json({ data, total });
 }
 
-// Retry a failed withdrawal by invoking Hilogate resend-callback
+// POST /api/v1/withdrawals/:id/retry
 export async function retryWithdrawal(req: Request, res: Response) {
-  const { id } = req.params
+  const clientId = (req as any).client.id as string
+  const { id }   = req.params
+
+  // Ownership check
+  const wr = await prisma.withdrawRequest.findUnique({
+    where: { refId: id },
+    select: { refId: true, status: true, partnerClientId: true }
+  })
+  if (!wr || wr.partnerClientId !== clientId) {
+    return res.status(403).json({ error: 'Access denied' })
+  }
+
+  // Status guard
+  if (['SUCCESS', 'PROCESSING'].includes(wr.status)) {
+    return res
+      .status(400)
+      .json({ error: `Tidak dapat retry untuk status ${wr.status}` })
+  }
+
+  // Retry process
   try {
-    const result = await retryDisbursement(id)
-    res.json({ success: true, result })
+    const result = await retryDisbursement(wr.refId)
+    return res.json({ success: true, result })
   } catch (err: any) {
-    res.status(500).json({ message: err.message })
+    console.error('Retry withdrawal error:', err)
+    return res
+      .status(500)
+      .json({ error: 'Gagal melakukan retry. Silakan coba lagi nanti.' })
   }
 }
-
 
 async function retry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
   let lastError: any
