@@ -1,9 +1,8 @@
-// File: frontend/src/components/ClientLayout.tsx
 'use client'
 
 import { ReactNode, useState, useEffect } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { Menu, Home, CreditCard, Bell, LogOut } from 'lucide-react'
 import { motion } from 'framer-motion'
 import styles from './ClientLayout.module.css'
@@ -20,21 +19,31 @@ const navItems = [
 export default function ClientLayout({ children }: ClientLayoutProps) {
   const [open, setOpen] = useState(false)
   const path = usePathname()
+  const router = useRouter()
 
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
   }, [open])
 
+const handleLogout = () => {
+  console.log('>> logout clicked')
+  // 1) Hapus token
+  localStorage.removeItem('token')
+  console.log('>> token removed, redirecting...')
+  // 2) Redirect
+  router.replace('/client/login')
+}
+
+
   return (
     <div className={styles.container}>
-<motion.aside
-  className={styles.sidebar}
-  initial={{ width: open ? 72 : 240 }}
-  animate={{ width: open ? 240 : 72, opacity: open ? 1 : 0.95 }}
-  transition={{ ease: 'easeInOut', duration: 0.3 }}
->
-
+      <motion.aside
+        className={styles.sidebar}
+        initial={{ width: open ? 72 : 240 }}
+        animate={{ width: open ? 240 : 72, opacity: open ? 1 : 0.95 }}
+        transition={{ ease: 'easeInOut', duration: 0.3 }}
+      >
         <div className={styles.logo}>
           <span className={styles.logoIcon}>🌐</span>
           {open && <span className={styles.logoText}>PORTAL</span>}
@@ -55,7 +64,11 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
         </nav>
 
         {open && (
-          <button className={styles.logoutBtn}>
+          <button
+            className={styles.logoutBtn}
+            onClick={handleLogout}
+            type="button"
+          >
             <LogOut size={18} />
             <span>Logout</span>
           </button>
