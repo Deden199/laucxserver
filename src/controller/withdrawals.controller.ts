@@ -1,27 +1,39 @@
 import { Request, Response } from 'express'
 import { prisma } from '../core/prisma'
 import { retryDisbursement } from '../service/hilogate.service'
+import { ClientAuthRequest } from '../middleware/clientAuth'
+
 import crypto from 'crypto'
 import { config } from '../config'
 import logger from '../logger'
 import { DisbursementStatus } from '@prisma/client'
 
-export async function listWithdrawals(req: Request, res: Response) {
-  const clientId = (req as any).client.id as string;
-  const { status, date_from, date_to, page = '1', limit = '20' } = req.query;
+export async function listWithdrawals(req: ClientAuthRequest, res: Response) {
+  // 1) Ambil partnerClientId dari clientUser yang sudah di-auth
+  const user = await prisma.clientUser.findUnique({
+    where: { id: req.clientUserId! },
+    select: { partnerClientId: true }
+  })
+  if (!user) {
+    return res.status(404).json({ error: 'User tidak ditemukan' })
+  }
+  const clientId = user.partnerClientId
 
-  const where: any = { partnerClientId: clientId };
-  if (status)       where.status = status as string;
+  // 2) Build filter berdasarkan clientId + query params
+  const { status, date_from, date_to, page = '1', limit = '20' } = req.query
+  const where: any = { partnerClientId: clientId }
+  if (status) where.status = status as string
   if (date_from || date_to) {
-    where.createdAt = {};
-    if (date_from) where.createdAt.gte = new Date(date_from as string);
-    if (date_to)   where.createdAt.lte = new Date(date_to as string);
+    where.createdAt = {}
+    if (date_from) where.createdAt.gte = new Date(date_from as string)
+    if (date_to)   where.createdAt.lte = new Date(date_to   as string)
   }
 
-  const pageNum  = Math.max(1, parseInt(page as string, 10));
-  const pageSize = Math.min(100, parseInt(limit as string, 10));
+  // 3) Pagination
+  const pageNum  = Math.max(1, parseInt(page as string, 10))
+  const pageSize = Math.min(100, parseInt(limit as string, 10))
 
-  // ambil fields penting termasuk bankName & accountNumber
+  // 4) Query ke database
   const [rows, total] = await Promise.all([
     prisma.withdrawRequest.findMany({
       where,
@@ -29,32 +41,31 @@ export async function listWithdrawals(req: Request, res: Response) {
       take:  pageSize,
       orderBy: { createdAt: 'desc' },
       select: {
-        refId:          true,
-        bankName:       true,
-        accountNumber:  true,
-        amount:         true,
-        status:         true,
-        createdAt:      true,
-        completedAt:    true,
+        refId:         true,
+        bankName:      true,
+        accountNumber: true,
+        amount:        true,
+        status:        true,
+        createdAt:     true,
+        completedAt:   true,
       },
     }),
     prisma.withdrawRequest.count({ where }),
-  ]);
+  ])
 
+  // 5) Format dan kirim response
   const data = rows.map(w => ({
     refId:         w.refId,
     bankName:      w.bankName,
     accountNumber: w.accountNumber,
     amount:        w.amount,
     status:        w.status,
-    date:          w.createdAt.toISOString(),          // jika UI pakai field date
-    createdAt:     w.createdAt.toISOString(),          // atau tetap createdAt
-    completedAt:   w.completedAt ? w.completedAt.toISOString() : null,
-  }));
+    createdAt:     w.createdAt.toISOString(),
+    completedAt:   w.completedAt?.toISOString() ?? null,
+  }))
 
-  return res.json({ data, total });
+  return res.json({ data, total })
 }
-
 // POST /api/v1/withdrawals/:id/retry
 export async function retryWithdrawal(req: Request, res: Response) {
   const clientId = (req as any).client.id as string

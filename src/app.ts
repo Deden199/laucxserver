@@ -79,9 +79,9 @@ const allowedOrigins = [
   'https://g2f.launcx.com',
   'https://payment.launcx.com',
   'https://c1.launcx.com',
-  // 'http://localhost:3000',
-  // 'http://localhost:3001',
-  // `http://localhost:${config.api.port}`,
+  'http://localhost:3000',
+  'http://localhost:3001',
+  `http://localhost:${config.api.port}`,
 ];
 app.use(cors({
   origin: (origin, cb) => cb(null, !origin || allowedOrigins.includes(origin)),
