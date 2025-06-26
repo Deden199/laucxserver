@@ -205,6 +205,9 @@ model PartnerClient {
   users      ClientUser[]
   balance    Float               @default(0.0)    // saldo aktif
   withdraws  WithdrawRequest[]  
+  callbackUrl String?
+  callbackSecret String?
+  allowedDomains String[]
 }
 
 model ClientUser {

@@ -3,7 +3,7 @@
 import { ReactNode, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Menu, Home, CreditCard, Bell, LogOut } from 'lucide-react'
+import { Menu, Home, CreditCard, Bell, Settings as IconSettings, LogOut } from 'lucide-react'
 import { motion } from 'framer-motion'
 import styles from './ClientLayout.module.css'
 
@@ -12,8 +12,9 @@ interface ClientLayoutProps {
 }
 
 const navItems = [
-  { label: 'Dashboard', href: '/client/dashboard', Icon: Home },
-  { label: 'Withdraw',  href: '/client/withdraw',   Icon: CreditCard },
+  { label: 'Dashboard',         href: '/client/dashboard',         Icon: Home },
+  { label: 'Withdraw',          href: '/client/withdraw',          Icon: CreditCard },
+  { label: 'Callback Settings', href: '/client/callback-settings', Icon: IconSettings },
 ]
 
 export default function ClientLayout({ children }: ClientLayoutProps) {
@@ -26,15 +27,12 @@ export default function ClientLayout({ children }: ClientLayoutProps) {
     return () => { document.body.style.overflow = '' }
   }, [open])
 
-const handleLogout = () => {
-  console.log('>> logout clicked')
-  // 1) Hapus token
-  localStorage.removeItem('token')
-  console.log('>> token removed, redirecting...')
-  // 2) Redirect
-  router.replace('/client/login')
-}
-
+  const handleLogout = () => {
+    // 1) Hapus token
+    localStorage.removeItem('token')
+    // 2) Redirect ke login
+    router.replace('/client/login')
+  }
 
   return (
     <div className={styles.container}>

@@ -1,3 +1,4 @@
+import axios from 'axios'
 import crypto                           from 'crypto'
 import { Request, Response }            from 'express'
 import { config }                       from '../config'
@@ -42,16 +43,19 @@ export const transactionCallback = async (req: Request, res: Response) => {
     rawBody = (req as any).rawBody.toString('utf8')
     logger.debug('[Callback] rawBody:', rawBody)
 
-    // 2) Verifikasi signature Hilogate
+    // 2) Verifikasi signature Hilogate (MD5)
     const full = JSON.parse(rawBody) as any
     const minimalPayload = JSON.stringify({
       ref_id: full.ref_id,
       amount: full.amount,
-      method: full.method
+      method: full.method,
     })
     const expectedSig = crypto
       .createHash('md5')
-      .update('/api/v1/transactions' + minimalPayload + config.api.hilogate.secretKey, 'utf8')
+      .update(
+        '/api/v1/transactions' + minimalPayload + config.api.hilogate.secretKey,
+        'utf8'
+      )
       .digest('hex')
     const gotSig = req.header('X-Signature') || req.header('x-signature') || ''
     logger.debug(`[Callback] gotSig=${gotSig} expected=${expectedSig}`)
@@ -59,7 +63,7 @@ export const transactionCallback = async (req: Request, res: Response) => {
       throw new Error('Invalid Hilogate signature')
     }
 
-    // 3) Simpan raw callback untuk idempotensi
+    // 3) Persist raw callback untuk idempotensi
     await paymentService.transactionCallback(req)
 
     // 4) Extract fields
@@ -68,49 +72,85 @@ export const transactionCallback = async (req: Request, res: Response) => {
       status: pgStatus,
       net_amount,
       qr_string,
-      settlement_status
+      settlement_status,
     } = full
-
-    if (!orderId)  throw new Error('Missing ref_id')
+    if (!orderId) throw new Error('Missing ref_id')
     if (net_amount == null) throw new Error('Missing net_amount')
 
-    // 5) Hitung status baru
+    // 5) Hitung status internal
     const upStatus      = pgStatus.toUpperCase()
-    const isInitSuccess = ['SUCCESS', 'DONE'].includes(upStatus)
-    const newStatus     = isInitSuccess ? 'PENDING_SETTLEMENT' : upStatus
-    const newSetSt      = settlement_status?.toUpperCase() ?? (isInitSuccess ? 'PENDING' : null)
+    const isSuccess     = ['SUCCESS', 'DONE'].includes(upStatus)
+    const newStatus     = isSuccess ? 'PENDING_SETTLEMENT' : upStatus
+    const newSetSt      = settlement_status?.toUpperCase() ?? (isSuccess ? 'PENDING' : null)
 
-    // 6) Cek order eksis & ambil merchantId-nya
+    // 6) Ambil merchantId
     const existing = await prisma.order.findUnique({
       where: { id: orderId },
       select: { merchantId: true }
     })
-    if (!existing) {
-      throw new Error(`Order ${orderId} not found`)
-    }
+    if (!existing) throw new Error(`Order ${orderId} not found`)
+    const merchantId = existing.merchantId
 
-    // 7) Update order tanpa mengubah merchantId
+    // 7) Update order
     await prisma.order.update({
       where: { id: orderId },
       data: {
         status:           newStatus,
         settlementStatus: newSetSt,
         amount:           net_amount,
-        pendingAmount:    isInitSuccess ? net_amount : null,
-        settlementAmount: isInitSuccess ? null : net_amount,
+        pendingAmount:    isSuccess ? net_amount : null,
+        settlementAmount: isSuccess ? null : net_amount,
         qrPayload:        qr_string ?? null,
-        updatedAt:        new Date()
+        updatedAt:        new Date(),
       }
     })
 
-    // 8) Kirim sukses ke Hilogate
+    // 8) Ambil callbackUrl & secret partner
+    const partner = await prisma.partnerClient.findUnique({
+      where: { id: merchantId },
+      select: { callbackUrl: true, callbackSecret: true }
+    })
+
+    // 9) Forward hanya untuk transaksi SUCCESS/DONE
+    if (isSuccess && partner?.callbackUrl && partner.callbackSecret) {
+      const timestamp = new Date().toISOString()
+      const nonce     = crypto.randomUUID()
+      const clientPayload = {
+        orderId,
+        status:     newStatus,
+        settlement: newSetSt,
+        amount:     net_amount,
+        qrPayload:  qr_string,
+        timestamp,
+        nonce
+      }
+
+      // HMAC-SHA256 signature untuk client
+      const clientSig = crypto
+        .createHmac('sha256', partner.callbackSecret)
+        .update(JSON.stringify(clientPayload))
+        .digest('hex')
+
+      // Fire-and-forget forwarding
+      axios.post(partner.callbackUrl, clientPayload, {
+        headers: { 'X-Callback-Signature': clientSig },
+        timeout: 5000
+      })
+      .then(() => logger.info('[Callback] Forwarded SUCCESS transaction'))
+      .catch(err => logger.error('[Callback] Forward to client failed', {
+        url: partner.callbackUrl,
+        error: err.message
+      }))
+    }
+
+    // 10) Kirim sukses ke Hilogate
     return res
       .status(200)
       .json(createSuccessResponse({ message: 'OK' }))
 
   } catch (err: any) {
     logger.error('[Callback] Error processing transaction:', err)
-    if (rawBody && !err.message.startsWith('Invalid Hilogate signature')) {
+    if (rawBody && !err.message.includes('Invalid Hilogate signature')) {
       logger.debug('[Callback] rawBody on error:', rawBody)
     }
     return res
@@ -131,16 +171,18 @@ export const checkPaymentStatus = async (req: AuthRequest, res: Response) => {
 /* ═════════════════ 4. Order Aggregator (QR/Checkout) ═════════════════ */
 export const createOrder = async (req: Request, res: Response) => {
   try {
-    // ambil clientId yang di-inject oleh apiKeyAuth
     const userId = (req as any).clientId as string
     const amount = Number(req.body.amount)
     if (isNaN(amount) || amount <= 0) {
-      return res.status(400).json(createErrorResponse('`amount` harus > 0'))
+      return res
+        .status(400)
+        .json(createErrorResponse('`amount` harus > 0'))
     }
 
     const payload: OrderRequest = { userId, amount }
     const order: OrderResponse = await paymentService.createOrder(payload)
-    return res.status(201).json(createSuccessResponse(order))
+    return res.redirect(303, order.checkoutUrl)
+
   } catch (err: any) {
     return res
       .status(400)

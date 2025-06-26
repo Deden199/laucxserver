@@ -4,13 +4,79 @@ import { DisbursementStatus } from '@prisma/client'
 import hilogateClient from '../service/hilogateClient'
 import { ClientAuthRequest } from '../middleware/clientAuth'
 import ExcelJS from 'exceljs'
+import crypto from 'crypto';
+
+
+
+export async function getClientCallbackUrl(req: ClientAuthRequest, res: Response) {
+  // Cari clientUser untuk dapatkan partnerClientId
+  const user = await prisma.clientUser.findUnique({
+    where: { id: req.clientUserId! },
+    select: { partnerClientId: true },
+  })
+  if (!user) {
+    return res.status(404).json({ error: 'User tidak ditemukan' })
+  }
+
+  // Ambil data callback dari partnerClient
+  const partner = await prisma.partnerClient.findUnique({
+    where: { id: user.partnerClientId },
+    select: { callbackUrl: true, callbackSecret: true },
+  })
+  if (!partner) {
+    return res.status(404).json({ error: 'PartnerClient tidak ditemukan' })
+  }
+
+  return res.json({
+    callbackUrl:    partner.callbackUrl || '',
+    callbackSecret: partner.callbackSecret || '',
+  })
+}
 
 /**
- * GET /api/v1/client/dashboard
- * – balance
- * – totalPending (semua PENDING_SETTLEMENT)
- * – daftar transaksi dengan status SUCCESS, DONE, SETTLED
+ * POST /api/v1/client/callback-url
+ * Body: { callbackUrl: string }
+ * – Update callbackUrl dan hasilkan callbackSecret jika belum ada
  */
+export async function updateClientCallbackUrl(req: ClientAuthRequest, res: Response) {
+  const { callbackUrl } = req.body
+
+  // Validasi format HTTPS
+  if (typeof callbackUrl !== 'string' || !/^https:\/\/.+/.test(callbackUrl)) {
+    return res.status(400).json({ error: 'Callback URL harus HTTPS' })
+  }
+
+  // Dapatkan partnerClientId
+  const user = await prisma.clientUser.findUnique({
+    where: { id: req.clientUserId! },
+    select: { partnerClientId: true },
+  })
+  if (!user) {
+    return res.status(404).json({ error: 'User tidak ditemukan' })
+  }
+
+  // Generate callbackSecret jika terkirim pertama
+  const existing = await prisma.partnerClient.findUnique({
+    where: { id: user.partnerClientId },
+    select: { callbackSecret: true },
+  })
+  let secret = existing?.callbackSecret
+  if (!secret) {
+    secret = crypto.randomBytes(32).toString('hex')
+  }
+
+  // Simpan callbackUrl & callbackSecret
+  const updated = await prisma.partnerClient.update({
+    where: { id: user.partnerClientId },
+    data: { callbackUrl, callbackSecret: secret },
+    select: { callbackUrl: true, callbackSecret: true },
+  })
+
+  return res.json({
+    callbackUrl:    updated.callbackUrl,
+    callbackSecret: updated.callbackSecret,
+  })
+}
 export async function getClientDashboard(req: ClientAuthRequest, res: Response) {
   // 1) Ambil user & partnerClient
   const user = await prisma.clientUser.findUnique({

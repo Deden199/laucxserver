@@ -328,7 +328,17 @@ export const checkPaymentStatus = async (req: Request) => {
 export const createOrder = async (payload: OrderRequest): Promise<OrderResponse> => {
   const forced = config.api.forceProvider?.toLowerCase() || null;
 
-  // ─── Forced = Hilogate ───
+  // ─── List of checkout hosts ─────────────────────────────
+  const checkoutHosts = [
+    'https://checkout1.launcx.com',
+    'https://altcheckout.launcx.com',
+    'https://payment.launcx.com',
+    'https://c1.launcx.com',
+  ];
+  const pickRandomHost = () =>
+    checkoutHosts[Math.floor(Math.random() * checkoutHosts.length)];
+
+  // ─── Forced = Hilogate ───────────────────────────────────
   if (forced === 'hilogate') {
     const direct = await createTransaction({
       merchantName: 'hilogate',
@@ -336,9 +346,12 @@ export const createOrder = async (payload: OrderRequest): Promise<OrderResponse>
       buyer:        payload.userId,
     });
     const { qrImage, totalAmount, referenceNo } = direct;
-    const checkoutUrl = `${config.api.baseUrl}/api/v1/checkout/${referenceNo}`;
 
-    // Hitung platform fee saja
+    // pilih satu host secara acak
+    const host        = pickRandomHost();
+    const checkoutUrl = `${host}/order/${referenceNo}`;
+
+    // Hitung platform fee
     const pc = await prisma.partnerClient.findUnique({ where: { id: payload.userId } });
     if (!pc) throw new Error('PartnerClient tidak ditemukan');
     const feePlatform      = Math.round(totalAmount * (pc.feePercent / 100) + pc.feeFlat);
@@ -363,28 +376,31 @@ export const createOrder = async (payload: OrderRequest): Promise<OrderResponse>
     return { orderId: referenceNo, qrPayload: qrImage, checkoutUrl };
   }
 
-  // ─── Aggregated flow ───
+  // ─── Aggregated flow ─────────────────────────────────────
   const providers = await getActiveProvidersForClient(payload.userId);
   if (!providers.length) throw new Error(`No active payment channels for user ${payload.userId}`);
 
-  // Pilih provider (override atau acak)
+  // pilih provider (override atau acak)
   let channel = forced
     ? providers.find(p => p.name.toLowerCase() === forced)
     : providers[Math.floor(Math.random() * providers.length)];
   if (!channel) throw new Error(`Provider override "${forced}" tidak tersedia`);
 
-  // Generate QR atau checkout URL
+  // generate orderId dan URL/QR
   const orderId = generateRandomId();
   let qrPayload: string | undefined;
   let checkoutUrl: string;
+
   if (channel.supportsQR && channel.generateQR) {
     qrPayload = await channel.generateQR({ orderId, amount: payload.amount });
-    checkoutUrl = `${config.api.baseUrl}/api/v1/checkout/${orderId}`;
+    const host        = pickRandomHost();
+    checkoutUrl       = `${host}/order/${orderId}`;
   } else {
+    // jika provider return full URL, gunakan itu
     checkoutUrl = await channel.generateCheckoutUrl({ orderId, amount: payload.amount });
   }
 
-  // Hitung platform fee saja untuk semua provider
+  // Hitung platform fee
   const pc = await prisma.partnerClient.findUnique({ where: { id: payload.userId } });
   if (!pc) throw new Error('PartnerClient tidak ditemukan');
   const feePlatform      = Math.round(payload.amount * (pc.feePercent / 100) + pc.feeFlat);

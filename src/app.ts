@@ -9,6 +9,7 @@ import pgProviderRoutes from './route/admin/pgProvider.routes';
 import adminMerchantRoutes from './route/admin/merchant.routes';
 import adminClientRoutes from './route/admin/client.routes';
 import { withdrawalCallback } from './controller/withdrawals.controller'
+import webRoutes from './route/web.routes';
 
 import ewalletRoutes from './route/ewallet.routes';
 import authRoutes from './route/auth.routes';
@@ -111,6 +112,7 @@ app.use('/api/v1/client', clientWebRoutes);
 
 /* ========== 5. PROTECTED – MERCHANT DASHBOARD ========== */
 app.use('/api/v1/merchant/dashboard', authMiddleware, merchantDashRoutes);
+app.use('/web', webRoutes);
 
 // Global error handler
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
