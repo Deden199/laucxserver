@@ -171,24 +171,29 @@ export const checkPaymentStatus = async (req: AuthRequest, res: Response) => {
 /* ═════════════════ 4. Order Aggregator (QR/Checkout) ═════════════════ */
 export const createOrder = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).clientId as string
-    const amount = Number(req.body.amount)
+    const userId = (req as any).clientId as string;
+    const amount = Number(req.body.amount);
+
     if (isNaN(amount) || amount <= 0) {
       return res
         .status(400)
-        .json(createErrorResponse('`amount` harus > 0'))
+        .json(createErrorResponse('`amount` harus > 0'));
     }
 
-    const payload: OrderRequest = { userId, amount }
-    const order: OrderResponse = await paymentService.createOrder(payload)
-    return res.redirect(303, order.checkoutUrl)
+    const payload: OrderRequest = { userId, amount };
+    const order: OrderResponse = await paymentService.createOrder(payload);
+
+    // Kembalikan JSON alih-alih redirect
+    return res
+      .status(200)
+      .json({ result: order });
 
   } catch (err: any) {
     return res
       .status(400)
-      .json(createErrorResponse(err.message ?? 'Order creation failed'))
+      .json(createErrorResponse(err.message ?? 'Order creation failed'));
   }
-}
+};
 
 /* ═════════════════ 5. Get order detail ═════════════════ */
 export const getOrder = async (req: AuthRequest, res: Response) => {
