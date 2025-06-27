@@ -16,7 +16,8 @@ type Tx = {
   id:               string
   date:             string
   reference:        string
-  rrn:              string          // ← sudah ada
+  rrn:              string
+  playerId:         string
   amount:           number
   feeLauncx:        number
   netSettle:        number
@@ -25,29 +26,20 @@ type Tx = {
 }
 
 export default function ClientDashboardPage() {
-  // summary yang tidak terfilter
-  const [balance,   setBalance]   = useState(0)
+  const [balance, setBalance] = useState(0)
   const [totalPend, setTotalPend] = useState(0)
-
-  // data yang terfilter
   const [totalTrans, setTotalTrans] = useState(0)
-  const [txs,        setTxs]        = useState<Tx[]>([])
-
-  const [loadingSummary,  setLoadingSummary]  = useState(true)
-  const [loadingTx,       setLoadingTx]       = useState(true)
-
+  const [txs, setTxs] = useState<Tx[]>([])
+  const [loadingSummary, setLoadingSummary] = useState(true)
+  const [loadingTx, setLoadingTx] = useState(true)
   const [range, setRange] = useState<'today'|'week'|'custom'>('today')
-  const [from,  setFrom]  = useState(() => new Date().toISOString().slice(0,10))
-  const [to,    setTo]    = useState(() => new Date().toISOString().slice(0,10))
+  const [from, setFrom] = useState(() => new Date().toISOString().slice(0,10))
+  const [to, setTo] = useState(() => new Date().toISOString().slice(0,10))
   const [search, setSearch] = useState('')
-
   const router = useRouter()
 
-  // bangun params untuk transaksi saja
   const buildParams = () => {
-    if (range === 'today') {
-      return { date_from: new Date().toISOString().slice(0,10) }
-    }
+    if (range === 'today') return { date_from: new Date().toISOString().slice(0,10) }
     if (range === 'week') {
       const d = new Date(); d.setDate(d.getDate() - 6)
       return { date_from: d.toISOString().slice(0,10) }
@@ -55,14 +47,10 @@ export default function ClientDashboardPage() {
     return { date_from: from, date_to: to }
   }
 
-  // fetch balance & totalPending (tanpa params)
   const fetchSummary = async () => {
     setLoadingSummary(true)
     try {
-      const { data } = await api.get<{
-        balance:      number
-        totalPending: number
-      }>('/client/dashboard')
+      const { data } = await api.get<{ balance: number; totalPending: number }>('/client/dashboard')
       setBalance(data.balance)
       setTotalPend(data.totalPending)
     } catch {
@@ -72,15 +60,10 @@ export default function ClientDashboardPage() {
     }
   }
 
-  // fetch transaksi & totalTrans dengan params filter
   const fetchTransactions = async () => {
     setLoadingTx(true)
     try {
-      const { data } = await api.get<{
-        transactions: Tx[]
-      }>('/client/dashboard', { params: buildParams() })
-
-      // hanya set transaksi dan hitung total
+      const { data } = await api.get<{ transactions: Tx[] }>('/client/dashboard', { params: buildParams() })
       setTxs(data.transactions)
       setTotalTrans(data.transactions.length)
     } catch {
@@ -95,20 +78,12 @@ export default function ClientDashboardPage() {
     if (!token) return router.push('/client/login')
     try {
       const resp = await api.get('/client/dashboard/export', {
-        params: buildParams(),
-        responseType: 'blob',
+        params: buildParams(), responseType: 'blob'
       })
-      const blob = new Blob([resp.data], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      })
+      const blob = new Blob([resp.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
       const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'client-transactions.xlsx'
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
+      const a = document.createElement('a'); a.href = url; a.download = 'client-transactions.xlsx'
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
     } catch {
       alert('Gagal export data')
     }
@@ -120,53 +95,36 @@ export default function ClientDashboardPage() {
       .catch(() => alert('Gagal menyalin'))
   }
 
-  // pertama load summary
   useEffect(() => { fetchSummary() }, [])
-
-  // setiap range berubah reload transaksi
   useEffect(() => { fetchTransactions() }, [range])
 
-  // filter search pada client side
   const filtered = txs.filter(t =>
     t.id.toLowerCase().includes(search.toLowerCase()) ||
-    t.rrn.toLowerCase().includes(search.toLowerCase())
+    t.rrn.toLowerCase().includes(search.toLowerCase()) ||
+    t.playerId.toLowerCase().includes(search.toLowerCase())
   )
 
-  if (loadingSummary) {
-    return <div className={styles.loader}>Loading summary…</div>
-  }
+  if (loadingSummary) return <div className={styles.loader}>Loading summary…</div>
 
   return (
     <div className={styles.container}>
-
-      {/* SIDEBAR KIRI: CARDS */}
       <aside className={styles.sidebar}>
         <section className={styles.statsGrid}>
           <div className={`${styles.card} ${styles.activeBalance}`}>
-            <Wallet className={styles.cardIcon} />
-            <h2>Saldo Aktif</h2>
-            <p>
-              {balance.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}
-            </p>
+            <Wallet className={styles.cardIcon} /><h2>Saldo Aktif</h2>
+            <p>{balance.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}</p>
           </div>
           <div className={styles.card}>
-            <ListChecks className={styles.cardIcon} />
-            <h2>Jumlah Transaksi</h2>
+            <ListChecks className={styles.cardIcon} /><h2>Jumlah Transaksi</h2>
             <p>{totalTrans}</p>
           </div>
           <div className={`${styles.card} ${styles.pendingBalance}`}>
-            <Clock className={styles.cardIcon} />
-            <h2>Pending Settlement</h2>
-            <p>
-              {totalPend.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}
-            </p>
+            <Clock className={styles.cardIcon} /><h2>Pending Settlement</h2>
+            <p>{totalPend.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}</p>
           </div>
         </section>
       </aside>
-
-      {/* KANAN: FILTER + TABEL */}
       <main className={styles.content}>
-        {/* FILTER BAR */}
         <section className={styles.filters}>
           <div className={styles.rangeControls}>
             <select value={range} onChange={e => setRange(e.target.value as any)}>
@@ -188,27 +146,28 @@ export default function ClientDashboardPage() {
           <input
             type="text"
             className={styles.searchInput}
-            placeholder="Cari TRX ID atau RRN…"
+            placeholder="Cari TRX ID, RRN, atau Player ID…"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
         </section>
-
-        {/* TRANSACTIONS TABLE */}
         <section className={styles.tableSection}>
           <h2>Daftar Transaksi &amp; Settlement</h2>
-
-          {loadingTx
-            ? <div className={styles.loader}>Loading transaksi…</div>
-            : (
+          {loadingTx ? (
+            <div className={styles.loader}>Loading transaksi…</div>
+          ) : (
             <div className={styles.tableWrapper}>
               <table className={styles.table}>
                 <thead>
                   <tr>
-                    <th>Tanggal</th>
+                    <th>Date</th>
                     <th>TRX ID</th>
-                    <th>RRN</th>
-                    <th>Jumlah</th>
+                   <th>
+                     <div className={styles.rrnCell}>
+                       <span className={styles.rrnHeader}>RRN</span>
+                     </div>
+                   </th>                    <th>Player ID</th>
+                    <th>Amount</th>
                     <th>Fee</th>
                     <th>Net Amount</th>
                     <th>Status</th>
@@ -218,42 +177,27 @@ export default function ClientDashboardPage() {
                 <tbody>
                   {filtered.map(t => (
                     <tr key={t.id}>
-                      <td>
-                        {new Date(t.date).toLocaleString('id-ID',{
-                          dateStyle:'short', timeStyle:'short'
-                        })}
-                      </td>
+                      <td>{new Date(t.date).toLocaleString('id-ID',{ dateStyle:'short', timeStyle:'short' })}</td>
                       <td>
                         <code className="font-mono">{t.id}</code>
-                        <button
-                          className={styles.copyBtn}
-                          onClick={() => copyText(t.id)}
-                          title="Copy TRX ID"
-                        >
+                        <button className={styles.copyBtn} onClick={() => copyText(t.id)} title="Copy TRX ID">
                           <ClipboardCopy size={14}/>
                         </button>
                       </td>
-                      <td className={styles.ellipsis}>
-                        {t.rrn}
-                        <button
-                          className={styles.copyBtn}
-                          onClick={() => copyText(t.rrn)}
-                          title="Copy RRN"
-                        >
-                          <ClipboardCopy size={14}/>
-                        </button>
+                      <td>
+                        <div className={styles.rrnCell}>
+                          <span className={styles.ellipsis}>{t.rrn}</span>
+                          <button className={styles.copyBtn} onClick={() => copyText(t.rrn)} title="Copy RRN">
+                            <ClipboardCopy size={14}/>
+                          </button>
+                        </div>
                       </td>
+                      <td>{t.playerId}</td>
                       <td>{t.amount.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}</td>
                       <td>{t.feeLauncx.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}</td>
-                      <td className={styles.netSettle}>
-                        {t.netSettle.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}
-                      </td>
+                      <td className={styles.netSettle}>{t.netSettle.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}</td>
                       <td>{t.status || '-'}</td>
-                      <td>
-                        {t.settlementStatus
-                          ? t.settlementStatus.replace(/_/g,' ')
-                          : '-'}
-                      </td>
+                      <td>{t.settlementStatus ? t.settlementStatus.replace(/_/g,' ') : '-'}</td>
                     </tr>
                   ))}
                 </tbody>

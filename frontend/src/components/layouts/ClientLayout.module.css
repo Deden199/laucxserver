@@ -84,13 +84,7 @@
   background: rgba(255, 77, 79, 0.25);
 }
 
-/* Main */
-.main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background: #f3f4f6;
-}
+
 
 .header {
   display: flex;
@@ -136,12 +130,23 @@
   border-radius: 50%;
 }
 
+/* Main */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #f3f4f6;
+  overflow-x: hidden;    /* <<< ini yang harus dipasang */
+}
+
 /* Content */
 .content {
   flex: 1;
   padding: 2rem;
   overflow-y: auto;
+  /* jangan ubah overflow-x di sini */
 }
+
 
 /* Responsive */
 @media (max-width: 768px) {

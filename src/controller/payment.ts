@@ -3,6 +3,7 @@ import crypto                           from 'crypto'
 import { Request, Response }            from 'express'
 import { config }                       from '../config'
 import logger                           from '../logger'
+import { getActiveProvidersForClient } from '../service/provider'
 import { createErrorResponse,
          createSuccessResponse }        from '../util/response'
 import paymentService, {
@@ -13,27 +14,54 @@ import paymentService, {
 import { AuthRequest }                  from '../middleware/auth'
 import { prisma }               from '../core/prisma'
 
-/* ═════════════════ 1. Legacy / Direct Transaction ═════════════════ */
 export const createTransaction = async (req: AuthRequest, res: Response) => {
   try {
-    const merchantName = String(req.body.merchantName ?? '').trim().toLowerCase() // wajib
-    const price        = Number(req.body.price ?? req.body.amount)
-    const buyer        = String(req.body.buyer ?? req.body.userId ?? '')
+    /* 0) Ambil ID partner-client dari middleware apiKeyAuth */
+    const clientId = (req as any).clientId || req.userId   // <— penting
 
-    if (!merchantName)
-      return res.status(400).json(createErrorResponse('`merchantName` wajib diisi'))
+    /* 1) merchantName default 'hilogate' */
+    const merchantName = String(req.body.merchantName ?? 'hilogate')
+      .trim()
+      .toLowerCase()
+
+    /* 2) price & playerId */
+    const price    = Number(req.body.price ?? req.body.amount)
+    const playerId = String(req.body.playerId ?? clientId)  // fallback OK
+
+    /* 3) flow */
+    const flow = req.body.flow === 'redirect' ? 'redirect' : 'embed'
+
+    /* 4) validate */
     if (isNaN(price) || price <= 0)
-      return res.status(400).json(createErrorResponse('`price/amount` harus > 0'))
+      return res.status(400).json(createErrorResponse('`price` harus > 0'))
 
-    /* Sesuai interface Transaction (TANPA merchantId) */
-    const trx: Transaction = { merchantName, price, buyer }
+    /* 5) Build Transaction – buyer = partner-client ID  */
+    const trx: Transaction = {
+      merchantName,
+      price,
+      buyer: clientId,      // ✔ ID partner-client
+      playerId,             // ✔ username gamer
+      flow,
+    }
 
+    /* 6) Call service */
     const result = await paymentService.createTransaction(trx)
-    return res.status(201).json(createSuccessResponse(result))
+
+    /* 7) Respond */
+    if (flow === 'redirect')
+      return res.status(303).location(result.checkoutUrl).send()
+
+    // embed -> full JSON
+    const { orderId, qrPayload, checkoutUrl, totalAmount } = result
+    return res.status(201).json(
+      createSuccessResponse({ orderId, checkoutUrl, qrPayload, playerId, totalAmount })
+    )
+
   } catch (err: any) {
     return res.status(500).json(createErrorResponse(err.message ?? 'Internal error'))
   }
 }
+
 
 export const transactionCallback = async (req: Request, res: Response) => {
   let rawBody: string
@@ -92,18 +120,30 @@ export const transactionCallback = async (req: Request, res: Response) => {
     const merchantId = existing.merchantId
 
     // 7) Update order
-    await prisma.order.update({
-      where: { id: orderId },
-      data: {
-        status:           newStatus,
-        settlementStatus: newSetSt,
-        amount:           net_amount,
-        pendingAmount:    isSuccess ? net_amount : null,
-        settlementAmount: isSuccess ? null : net_amount,
-        qrPayload:        qr_string ?? null,
-        updatedAt:        new Date(),
-      }
-    })
+// 7) Update order — TANPA menyentuh `amount`
+await prisma.order.update({
+  where: { id: orderId },
+  data: {
+    status:           newStatus,
+    settlementStatus: newSetSt,
+    // biarkan `amount` tetap seperti saat order dibuat
+    pendingAmount:    isSuccess ? net_amount : null,
+    settlementAmount: isSuccess ? null     : net_amount,
+    qrPayload:        qr_string ?? null,
+    updatedAt:        new Date(),
+  }
+})
+// 8) Ambil kembali order dari DB, termasuk field internal
+const order = await prisma.order.findUnique({
+  where: { id: orderId },
+  select: {
+    amount:           true,   // original input
+    feeLauncx:        true,
+    pendingAmount:    true,
+    settlementAmount: true
+  }
+})
+if (!order) throw new Error(`Order ${orderId} not found after update`)
 
     // 8) Ambil callbackUrl & secret partner
     const partner = await prisma.partnerClient.findUnique({
@@ -115,15 +155,17 @@ export const transactionCallback = async (req: Request, res: Response) => {
     if (isSuccess && partner?.callbackUrl && partner.callbackSecret) {
       const timestamp = new Date().toISOString()
       const nonce     = crypto.randomUUID()
-      const clientPayload = {
-        orderId,
-        status:     newStatus,
-        settlement: newSetSt,
-        amount:     net_amount,
-        qrPayload:  qr_string,
-        timestamp,
-        nonce
-      }
+  const clientPayload = {
+    orderId,
+    status:           newStatus,
+    settlementStatus: newSetSt,
+    grossAmount:      order.amount,         // nilai asli
+    feeLauncx:        order.feeLauncx,      // fee internal
+    netAmount:        order.pendingAmount,  // net dari gateway
+    qrPayload:        qr_string,
+    timestamp,
+    nonce
+  }
 
       // HMAC-SHA256 signature untuk client
       const clientSig = crypto
@@ -181,12 +223,12 @@ export const createOrder = async (req: Request, res: Response) => {
     }
 
     const payload: OrderRequest = { userId, amount };
-    const order: OrderResponse = await paymentService.createOrder(payload);
+    // const order: OrderResponse = await paymentService.createOrder(payload);
 
     // Kembalikan JSON alih-alih redirect
     return res
       .status(200)
-      .json({ result: order });
+      // .json({ result: order });
 
   } catch (err: any) {
     return res

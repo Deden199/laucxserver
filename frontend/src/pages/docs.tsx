@@ -1,47 +1,36 @@
 // File: src/pages/client/integration.tsx
 'use client'
 import { NextPage } from 'next'
-
-import React, { useState, useEffect } from 'react'
+import React from 'react'
 import styles from './DocsPage.module.css'
-import api from '@/lib/api'
-const Docsss: NextPage & { disableLayout?: boolean } = () => {
 
 /**
- * Halaman dokumentasi ini ditujukan untuk integrator sisi client,
- * yang ingin memanggil API Launcx dari server mereka.
- * Fokus pada penggunaan endpoint, pengiriman header, dan penanganan callback.
+ * Dokumentasi lengkap integrasi Launcx API untuk partner‑client.
+ * Menjelaskan header otentikasi, dua flow transaksi (Embed & Redirect),
+ * struktur request/response, callback, dan fitur dashboard.
  */
 
-  return (
-    <main className={styles.container}>
+const IntegrationDocs: NextPage & { disableLayout?: boolean } = () => (
+  <main className={styles.container}>
+    {/* ───────────────────────────────────────────────  TITLE  */}
+    <h1 className={styles.heading1}>Launcx API Integration Guide</h1>
 
-      <h1 className={styles.heading1}>Launcx API Integration Guide</h1>
-
-      {/* --- AUTHENTICATION --- */}
-      <section className={styles.section}>
-        <h2 className={styles.heading2}>1. Authentication</h2>
-        <p className={styles.bodyText}>
-          Semua request ke API Launcx harus memiliki header berikut untuk
-          otorisasi dan keamanan:
-        </p>
-        <ul className={styles.list}>
-          <li>
-            <code className={styles.codeInline}>Content-Type: application/json</code>
-          </li>
-          <li>
-            <code className={styles.codeInline}>x-api-key: &lt;YOUR_API_KEY&gt;</code>
-          </li>
-          <li>
-            <code className={styles.codeInline}>x-timestamp: &lt;Unix timestamp ms&gt;</code>
-          </li>
-        </ul>
-        <p className={styles.bodyText}>
-          Timestamp digunakan untuk mencegah replay attack. Server akan
-          menolak request jika selisihnya lebih dari 5 menit.
-        </p>
-        <pre className={styles.codeBlock}>
-          <code>{`import axios from 'axios'
+    {/* ───────────────────────────────────────────── 1. AUTH  */}
+    <section className={styles.section}>
+      <h2 className={styles.heading2}>1. Authentication</h2>
+      <p className={styles.bodyText}>
+        Setiap request ke <code>/api/v1/*</code> <strong>wajib</strong> menyertakan header berikut:
+      </p>
+      <ul className={styles.list}>
+        <li><code className={styles.codeInline}>Content-Type: application/json</code></li>
+        <li><code className={styles.codeInline}>x-api-key: &lt;YOUR_API_KEY&gt;</code></li>
+        <li><code className={styles.codeInline}>x-timestamp: &lt;Unix TS ms&gt;</code></li>
+      </ul>
+      <p className={styles.bodyText}>
+        <code>x-timestamp</code> mencegah replay‑attack (ditolak &gt; 5 menit).
+      </p>
+      <pre className={styles.codeBlock}>
+{`import axios from 'axios'
 
 const api = axios.create({
   baseURL: 'https://launcx.com/api/v1',
@@ -51,62 +40,103 @@ const api = axios.create({
   },
 })
 
-api.interceptors.request.use(config => {
-  config.headers['x-timestamp'] = Date.now().toString()
-  return config
+api.interceptors.request.use(cfg => {
+  cfg.headers['x-timestamp'] = Date.now().toString()
+  return cfg
 })
 
-export default api`}</code>
-        </pre>
-      </section>
+export default api`}
+      </pre>
+    </section>
 
-      {/* --- CREATE ORDER --- */}
-      <section className={styles.section}>
-        <h2 className={styles.heading2}>2. Create Order</h2>
-        <p className={styles.bodyText}>
-          Endpoint ini membuat request pembayaran. Setelah berhasil,
-          server akan merespon kode <code className={styles.codeInline}>303</code>
-          dengan header <code className={styles.codeInline}>Location</code> yang
-          berisi URL checkout.
-        </p>
-        <pre className={styles.codeBlock}>
-          <code>{`POST /payments/create-order
-Host: launcx.com
-Headers: sesuai bagian Authentication
+    {/* ─────────────────────────────────────────── 2. CREATE ORDER  */}
+    <section className={styles.section}>
+      <h2 className={styles.heading2}>2. Create Transaction / Order</h2>
+      <p className={styles.bodyText}>
+        Endpoint tunggal <code className={styles.codeInline}>POST /api/v1/payments</code> mendukung dua
+        <em>flow</em> pembayaran:
+      </p>
+      <ol className={styles.list}>
+        <li><strong>Embed Flow</strong> – merespons JSON berisi <code>qrPayload</code>.</li>
+        <li><strong>Redirect Flow</strong> – merespons <code>303 See Other</code> dengan header <code>Location</code>.</li>
+      </ol>
 
+      {/* ----------   Embed Flow  ---------------------------------- */}
+      <h3 className={styles.heading3}>2.1 Embed Flow</h3>
+      <pre className={styles.codeBlock}>
+{`POST /api/v1/payments
+Headers: (lihat Authentication)
 Body:
 {
-  "amount": 150000,    
-  "currency": "IDR"
-}`}</code>
-        </pre>
-        <pre className={styles.codeBlock}>
-          <code>{`HTTP/1.1 303 See Other
-Location: https://checkout.xmpl.com/session/abc123`}</code>
-        </pre>
-        <h3 className={styles.heading3}>Contoh cURL</h3>
-        <pre className={styles.codeBlock}>
-          <code>{`curl -i -X POST https://launcx.com/api/v1/payments/create-order \
+  "price": 50000,
+  "playerId": "gamer_foo",
+  "flow": "embed"        // atau hilangkan—default embed
+}`}
+      </pre>
+      <p className={styles.bodyText}>Response <code>201 Created</code>:</p>
+      <pre className={styles.codeBlock}>
+{`{
+  "success": true,
+  "data": {
+    "orderId": "685s6eb9263c75af53ba84b1",
+    "checkoutUrl": "https://payment.launcx.com/order/{orderId}",
+    "qrPayload": "0002010102122667...47B8",
+    "playerId": "gamer_foo",
+    "totalAmount": 50000
+  }
+}`}
+      </pre>
+
+      {/* ----------   Redirect Flow  ------------------------------- */}
+      <h3 className={styles.heading3}>2.2 Redirect Flow</h3>
+      <pre className={styles.codeBlock}>
+{`POST /api/v1/payments
+Headers: (sama)
+Body:
+{
+  "price": 50000,
+  "playerId": "gamer_foo",
+  "flow": "redirect"
+}`}
+      </pre>
+      <p className={styles.bodyText}>Response <code>303 See Other</code>:</p>
+      <pre className={styles.codeBlock}>
+{`HTTP/1.1 303 See Other
+Location: https://payment.launcx.com/order/685e6f36263c75af53ba84b3`}
+      </pre>
+
+      <h4 className={styles.heading3}>Contoh cURL (Embed)</h4>
+      <pre className={styles.codeBlock}>
+{`curl -i -X POST https://launcx.com/api/v1/payments \
   -H "Content-Type: application/json" \
   -H "x-api-key: <YOUR_API_KEY>" \
   -H "x-timestamp: $(($(date +%s)*1000))" \
-  -d '{"amount":50000}'`}</code>
-        </pre>
-        <h3 className={styles.heading3}>Contoh Axios</h3>
-        <pre className={styles.codeBlock}>
-          <code>{`import api from '@/lib/api'
+  -d '{
+        "price": 50000,
+        "playerId": "gamer_foo"
+      }'`}
+      </pre>
 
-async function initiatePayment(amount: number) {
-  const res = await api.post('/payments/create-order', { amount })
+      <h4 className={styles.heading3}>Contoh Axios (Redirect)</h4>
+      <pre className={styles.codeBlock}>
+{`import api from '@/lib/api'
+
+async function payRedirect() {
+  const res = await api.post('/payments', {
+    price: 50000,
+    playerId: 'gamer_foo',
+    flow: 'redirect',
+  }, { validateStatus: () => true })
+
   if (res.status === 303 && res.headers.location) {
-    return res.headers.location  // URL checkout
+    window.location.href = res.headers.location
+  } else {
+    console.error('Unexpected response', res.data)
   }
-  throw new Error('Create order failed: ' + JSON.stringify(res.data))
-}`}</code>
-        </pre>
-      </section>
-
-      {/* --- REGISTER CALLBACK URL --- */}
+}`}
+      </pre>
+    </section>
+    {/* --- REGISTER CALLBACK URL --- */}
       <section className={styles.section}>
         <h2 className={styles.heading2}>3. Register Callback URL</h2>
         <p className={styles.bodyText}>
@@ -202,8 +232,8 @@ Content-Type: application/json
 
     </main>
   )
-}
 
-Docsss.disableLayout = true
 
-export default Docsss
+IntegrationDocs.disableLayout = true
+
+export default IntegrationDocs

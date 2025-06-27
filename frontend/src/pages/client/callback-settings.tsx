@@ -2,7 +2,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Bell, Copy } from 'lucide-react'
+import { Bell, Copy, CheckCircle, AlertCircle } from 'lucide-react'
 import apiClient from '@/lib/apiClient'
 import styles from './CallbackPage.module.css'
 
@@ -13,16 +13,15 @@ export default function CallbackPage() {
   const [message, setMessage] = useState('')
   const [isError, setIsError] = useState(false)
 
-  // Load existing callback URL & secret
   useEffect(() => {
     apiClient
-      .get('/client/callback-url')  // adjusted path
+      .get('/client/callback-url')
       .then(res => {
         setUrl(res.data.callbackUrl || '')
         setSecret(res.data.callbackSecret || '')
       })
       .catch(() => {
-        setMessage('❌ Gagal memuat data callback')
+        setMessage('Gagal memuat data callback')
         setIsError(true)
       })
   }, [])
@@ -32,12 +31,12 @@ export default function CallbackPage() {
     setMessage('')
     setIsError(false)
     try {
-      const res = await apiClient.post('/client/callback-url', { callbackUrl: url })  // adjusted
+      const res = await apiClient.post('/client/callback-url', { callbackUrl: url })
       setUrl(res.data.callbackUrl)
       if (res.data.callbackSecret) setSecret(res.data.callbackSecret)
-      setMessage('✅ Callback URL & Secret berhasil disimpan!')
+      setMessage('Callback URL & Secret berhasil disimpan!')
     } catch {
-      setMessage('❌ Gagal menyimpan callback URL')
+      setMessage('Gagal menyimpan callback URL')
       setIsError(true)
     } finally {
       setSaving(false)
@@ -47,7 +46,7 @@ export default function CallbackPage() {
   const copySecret = () => {
     if (secret) {
       navigator.clipboard.writeText(secret)
-      setMessage('🔑 Secret berhasil disalin!')
+      setMessage('Secret berhasil disalin!')
       setIsError(false)
     }
   }
@@ -56,7 +55,7 @@ export default function CallbackPage() {
     <div className={styles.wrapper}>
       <div className={styles.card}>
         <div className={styles.header}>
-          <Bell size={24} />
+          <Bell size={28} className={styles.icon} />
           <h1 className={styles.title}>Callback Settings</h1>
         </div>
 
@@ -78,17 +77,17 @@ export default function CallbackPage() {
           <div className={styles.secretWrapper}>
             <input
               type="text"
-              className={styles.input}
+              className={`${styles.input} ${styles.secretInput}`}
               readOnly
               value={secret}
-              placeholder="Secret will appear here"
+              placeholder="Secret akan muncul di sini"
             />
             <button
               type="button"
               className={styles.copyButton}
               onClick={copySecret}
             >
-              <Copy size={16} />
+              <Copy size={20} />
             </button>
           </div>
         </div>
@@ -102,11 +101,13 @@ export default function CallbackPage() {
         </button>
 
         {message && (
-          <p className={`${styles.message} ${!isError ? styles.success : ''}`}>
-            {message}
-          </p>
+          <div className={styles.messageWrapper}>
+            {isError ? <AlertCircle size={20} className={styles.errorIcon} /> : <CheckCircle size={20} className={styles.successIcon} />}
+            <span className={`${styles.message} ${isError ? styles.error : styles.success}`}>{message}</span>
+          </div>
         )}
       </div>
     </div>
   )
 }
+

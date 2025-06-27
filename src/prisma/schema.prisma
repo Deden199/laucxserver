@@ -60,6 +60,7 @@ model transaction_request {
   merchantId       String?           @db.ObjectId
   subMerchantId    String
   buyerId          String
+  playerId         String?
   amount           Int
   status           TransactionStatus
   createdAt        DateTime          @default(now())
@@ -77,6 +78,7 @@ model transaction_request {
 model transaction_response {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
   referenceId   String   @db.ObjectId
+  playerId         String?
   responseBody  Json
   createdAt     DateTime @default(now())
 }
@@ -146,6 +148,7 @@ model disbursement_account {
 model Order {
   id               String   @id @default(uuid()) @map("_id")
   userId           String   // ID pembeli (buyer)
+  playerId         String?
   merchantId       String?
   amount           Float
   channel          String

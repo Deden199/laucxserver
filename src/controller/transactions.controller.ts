@@ -50,8 +50,8 @@ export async function syncTransaction (req: AuthRequest, res: Response) {
 export async function createTransaction (req: AuthRequest, res: Response) {
   try {
     const merchantId = req.userId!            // partner-client yg login
-    const { buyerId, amount } = req.body
-
+    const { buyerId, amount, playerId: bodyPid } = req.body
+    const pid = bodyPid ?? req.userId
 const trx = await prisma.transaction_request.create({
   data: {
     merchantId,              // FK merchant
@@ -59,6 +59,8 @@ const trx = await prisma.transaction_request.create({
     buyerId : String(buyerId),
     amount  : Number(amount),
     status  : 'PENDING',
+    playerId:         pid,             // ← tambahkan
+
   },
 })
 

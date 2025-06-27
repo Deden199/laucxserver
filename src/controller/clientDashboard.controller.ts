@@ -104,7 +104,7 @@ export async function getClientDashboard(req: ClientAuthRequest, res: Response) 
   })
   const totalPending = pendingAgg._sum.pendingAmount ?? 0
 
-  // 3b) Ambil semua order relevant
+  // 3b) Ambil semua order relevant, termasuk playerId
   const orders = await prisma.order.findMany({
     where: {
       merchantId: pc.id,
@@ -117,12 +117,13 @@ export async function getClientDashboard(req: ClientAuthRequest, res: Response) 
     select: {
       id:               true,
       qrPayload:        true,
-      amount:           true,
+      rrn:              true,
+      playerId:         true,   // ← tambahkan
+      amount:           true,   // original input
       feeLauncx:        true,
       settlementAmount: true,
       pendingAmount:    true,
       status:           true,
-      rrn:              true,
       createdAt:        true
     }
   })
@@ -132,26 +133,23 @@ export async function getClientDashboard(req: ClientAuthRequest, res: Response) 
     .filter(o => o.status !== 'PENDING_SETTLEMENT')
     .reduce((sum, o) => sum + o.amount, 0)
 
-  // 5) Map ke payload
+  // 5) Map ke payload, sertakan playerId dan amount asli
   const transactions = orders.map(o => {
     const netSettle = o.status === 'PENDING_SETTLEMENT'
       ? (o.pendingAmount ?? 0) - (o.feeLauncx ?? 0)
       : ((o.settlementAmount ?? o.amount) - (o.feeLauncx ?? 0))
 
-    // map status hanya SUCCESS/DONE
-    const mappedStatus = o.status === 'DONE'
-      ? 'DONE'
-      : 'SUCCESS'
+    const mappedStatus = o.status === 'DONE' ? 'DONE' : 'SUCCESS'
 
     return {
       id:               o.id,
       date:             o.createdAt.toISOString(),
       reference:        o.qrPayload ?? '',
       rrn:              o.rrn ?? '',
-      amount:           o.amount,
+      playerId:         o.playerId,      // ← kirim Player ID
+      amount:           o.amount,        // ← jumlah asli
       feeLauncx:        o.feeLauncx ?? 0,
       netSettle,
-      // kirim settlementStatus asli
       settlementStatus: o.status,
       status:           mappedStatus
     }
@@ -165,6 +163,7 @@ export async function getClientDashboard(req: ClientAuthRequest, res: Response) 
     transactions
   })
 }
+
 
 /**
  * GET /api/v1/client/dashboard/export
