@@ -119,20 +119,21 @@ export const transactionCallback = async (req: Request, res: Response) => {
     if (!existing) throw new Error(`Order ${orderId} not found`)
     const merchantId = existing.merchantId
 
-    // 7) Update order
-// 7) Update order — TANPA menyentuh `amount`
+// step 7: simpan gross & net terpisah
 await prisma.order.update({
   where: { id: orderId },
   data: {
     status:           newStatus,
     settlementStatus: newSetSt,
-    // biarkan `amount` tetap seperti saat order dibuat
-    pendingAmount:    isSuccess ? net_amount : null,
-    settlementAmount: isSuccess ? null     : net_amount,
+    // simpan gross (full.amount) di pendingAmount
+    pendingAmount:    isSuccess ? full.amount : null,
+    // simpan net (net_amount) di settlementAmount—untuk nanti di UI
+    settlementAmount: isSuccess ? null       : net_amount,
     qrPayload:        qr_string ?? null,
     updatedAt:        new Date(),
   }
 })
+
 // 8) Ambil kembali order dari DB, termasuk field internal
 const order = await prisma.order.findUnique({
   where: { id: orderId },
