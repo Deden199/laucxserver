@@ -10,6 +10,7 @@ import adminMerchantRoutes from './route/admin/merchant.routes';
 import adminClientRoutes from './route/admin/client.routes';
 import { withdrawalCallback } from './controller/withdrawals.controller'
 import webRoutes from './route/web.routes';
+import simulateRoutes from './route/simulate.routes';
 
 import ewalletRoutes from './route/ewallet.routes';
 import authRoutes from './route/auth.routes';
@@ -99,6 +100,7 @@ app.use('/api/v1', ewalletRoutes);         // public e-wallet endpoints
 /* ========== 2. PROTECTED – API-KEY (SERVER-TO-SERVER) ========== */
 app.use('/api/v1/payments', apiKeyAuth, paymentRouter);
 // app.use('/api/v1/disbursements', apiKeyAuth, disbursementRouter);
+app.use('/api/v1', simulateRoutes);
 
 /* ========== 3. PROTECTED – ADMIN PANEL ========== */
 app.use('/api/v1/admin/merchants', authMiddleware, adminMerchantRoutes);

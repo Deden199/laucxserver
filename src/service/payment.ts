@@ -201,6 +201,84 @@ export const createTransaction = async (
 };
   
 
+export async function processHilogatePayload(payload: {
+  ref_id: string;
+  amount: number;
+  method: string;
+  status: string;
+  net_amount: number;
+  qr_string?: string;
+  settlement_status?: string;
+}) {
+  const {
+    ref_id: orderId,
+    amount: grossAmount,
+    status: pgStatus,
+    net_amount,
+    qr_string,
+    settlement_status
+  } = payload;
+
+  // 1) Hit DB untuk ambil order & merchant
+  const existing = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { merchantId: true, amount: true, feeLauncx: true }
+  });
+  if (!existing) throw new Error(`Order ${orderId} not found`);
+
+  // 2) Hitung status internal
+  const upStatus  = pgStatus.toUpperCase();
+  const isSuccess = ['SUCCESS','DONE'].includes(upStatus);
+  const newStatus = isSuccess ? 'PENDING_SETTLEMENT' : upStatus;
+  const newSetSt  = settlement_status?.toUpperCase() ?? (isSuccess ? 'PENDING' : null);
+
+  // 3) Update order di DB
+  await prisma.order.update({
+    where: { id: orderId },
+    data: {
+      status:           newStatus,
+      settlementStatus: newSetSt,
+      pendingAmount:    isSuccess ? grossAmount : null,
+      settlementAmount: isSuccess ? null       : net_amount,
+      qrPayload:        qr_string ?? null,
+      updatedAt:        new Date(),
+    }
+  });
+
+  // 4) Forward ke partner jika sukses
+  if (isSuccess) {
+    const partner = await prisma.partnerClient.findUnique({
+      where: { id: existing.merchantId },
+      select: { callbackUrl: true, callbackSecret: true }
+    });
+    if (partner?.callbackUrl && partner.callbackSecret) {
+      const timestamp = new Date().toISOString();
+      const nonce     = crypto.randomUUID();
+      const clientPayload = {
+        orderId,
+        status:           newStatus,
+        settlementStatus: newSetSt,
+        grossAmount:      existing.amount,
+        feeLauncx:        existing.feeLauncx,
+        netAmount:        grossAmount,
+        qrPayload:        qr_string,
+        timestamp,
+        nonce
+      };
+      const clientSig = crypto
+        .createHmac('sha256', partner.callbackSecret)
+        .update(JSON.stringify(clientPayload))
+        .digest('hex');
+      axios.post(partner.callbackUrl, clientPayload, {
+        headers: { 'X-Callback-Signature': clientSig },
+        timeout: 5000
+      })
+      .then(() => logger.info('[Callback] Forwarded to client'))
+      .catch(err => logger.error('[Callback] Forward failed', err));
+    }
+  }
+}
+
 /* ═════════════ 2. Callback handler (signature + idempotensi) ═════════════ */
 export const transactionCallback = async (request: Request) => {
   // langsung baca payload yang sudah ter-parse di controller
