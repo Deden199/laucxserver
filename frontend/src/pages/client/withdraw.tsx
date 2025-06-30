@@ -1,4 +1,7 @@
 'use client'
+type ClientOption = { id: string; name: string };
+import axios from 'axios'
+// …
 
 import { useState, useEffect } from 'react'
 import apiClient from '@/lib/apiClient'
@@ -35,10 +38,14 @@ export default function WithdrawPage() {
   /* ──────────────── Dashboard data ──────────────── */
   const [balance, setBalance] = useState(0)
   const [pending, setPending] = useState(0)
+const [pageError, setPageError] = useState('')
 
   /* ──────────────── Withdrawals list ──────────────── */
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([])
   const [loading, setLoading] = useState(true)
+// Parent–Child
+const [children, setChildren]           = useState<ClientOption[]>([])
+const [selectedChild, setSelectedChild] = useState<'all' | string>('all')
 
   /* ──────────────── Modal & Form state ──────────────── */
   const [open, setOpen] = useState(false)
@@ -64,20 +71,31 @@ export default function WithdrawPage() {
   const [perPage, setPerPage] = useState(10)
 
   /* ──────────────── Initial fetch ──────────────── */
-  useEffect(() => {
-    setLoading(true)
-    Promise.all([
-      apiClient.get('/client/dashboard'),                 // balance + pending
-      apiClient.get<{ data: Withdrawal[] }>('/client/withdrawals'), // history
-    ])
-      .then(([dash, hist]) => {
-        setBalance(dash.data.balance)
-        setPending(dash.data.totalPending ?? 0)
-        setWithdrawals(hist.data.data)
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [])
+useEffect(() => {
+  setLoading(true)
+  setPageError('')            
+
+  Promise.all([
+    apiClient.get<{
+      balance: number
+      totalPending: number
+      children: ClientOption[]
+    }>('/client/dashboard', {
+      params: { clientId: selectedChild }
+    }),
+    apiClient.get<{ data: Withdrawal[] }>('/client/withdrawals', {
+      params: { clientId: selectedChild }
+    }),
+  ])
+    .then(([dash, hist]) => {
+      setBalance(dash.data.balance)
+      setPending(dash.data.totalPending ?? 0)
+      if (children.length === 0) setChildren(dash.data.children)
+      setWithdrawals(hist.data.data)
+    })
+    .catch(console.error)
+    .finally(() => setLoading(false))
+}, [selectedChild])
 
   /* ──────────────── Helpers ──────────────── */
   const handleChange = (
@@ -187,11 +205,15 @@ await apiClient.post('/client/withdrawals', {
       }))
     setIsValid(false)
       setOpen(false)
-    } catch {
+    } catch (err: any){
+    if (axios.isAxiosError(err)) {
+      setError(err.response?.data?.error || 'Submit gagal')
+    } else {
       setError('Submit gagal')
-    } finally {
-      setBusy(b => ({ ...b, submitting: false }))
     }
+  } finally {
+    setBusy(b => ({ ...b, submitting: false }))
+  }
   }
 
   const exportToExcel = () => {
@@ -226,7 +248,24 @@ await apiClient.post('/client/withdrawals', {
 
   /* ──────────────── JSX ──────────────── */
   return (
-    <div className={styles.page}>
+    
+  <div className={styles.page}>
+    {pageError && <p className={styles.pageError}>{pageError}</p>}
+          {children.length > 0 && (
+  <div className={styles.childSelector}>
+    <label>Pilih Child:&nbsp;</label>
+    <select
+      value={selectedChild}
+      onChange={e => setSelectedChild(e.target.value as any)}
+    >
+      <option value="all">Semua Child</option>
+      {children.map(c => (
+        <option key={c.id} value={c.id}>{c.name}</option>
+      ))}
+    </select>
+  </div>
+)}
+
       {/* === STAT CARDS ===================================================== */}
       <div className={styles.statsGrid}>
         {/* Active balance */}

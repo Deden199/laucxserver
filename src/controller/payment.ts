@@ -14,6 +14,8 @@ import paymentService, {
 }                                       from '../service/payment'
 import { AuthRequest }                  from '../middleware/auth'
 import { prisma }               from '../core/prisma'
+import Decimal from 'decimal.js'
+
 
 export const createTransaction = async (req: ApiKeyRequest, res: Response) => {
   try {
@@ -146,33 +148,39 @@ export const transactionCallback = async (req: Request, res: Response) => {
     if (!partnerConfig) throw new Error(`Partner ${merchantId} not found`)
     const { feePercent = 0, feeFlat = 0 } = partnerConfig
 
-    // 8) Hitung fee Launcx
-    const feeLauncxCalc = feeFlat + Math.round(grossAmount * (feePercent / 100))
+  // 8) Hitung fee Launcx dengan presisi 3 digit (opsi 1)
+const pct       = new Decimal(feePercent)            // misal 1,05 → 1.05
+const grossDec  = new Decimal(grossAmount)           // misal 1000
+const rawFee    = grossDec.times(pct).dividedBy(100) // 10.5
+// round 3 digit; pakai ROUND_HALF_UP (bisa diganti ROUND_FLOOR / ROUND_CEIL)
+const feeRounded    = rawFee.toDecimalPlaces(3, Decimal.ROUND_HALF_UP) 
+const feeLauncxCalc = feeRounded.plus(new Decimal(feeFlat))            // + feeFlat
 
-    // 9) Simpan status, fee, dan amounts
-    await prisma.order.update({
-      where: { id: orderId },
-      data: {
-        status:           newStatus,
-        settlementStatus: newSetSt,
-        qrPayload:        qr_string ?? null,
-        updatedAt:        new Date(),
+// 9) Simpan status, fee, dan amounts
+await prisma.order.update({
+  where: { id: orderId },
+  data: {
+    status: newStatus,   // ← pakai newStatus yang sudah kamu hitung
+    settlementStatus: newSetSt,
+    qrPayload:        qr_string ?? null,
+    updatedAt:        new Date(),
 
-        // fee pihak ketiga (PG) selalu
-        fee3rdParty:      pgFee,
+    // fee pihak ketiga (PG)
+    fee3rdParty:      pgFee,
 
-        // fee internal Launcx hanya saat sukses
-        feeLauncx:        isSuccess ? feeLauncxCalc : null,
+    // fee internal Launcx dengan presisi 3 digit
+    feeLauncx:        isSuccess ? feeLauncxCalc.toNumber() : null,
 
-        // pendingAmount = gross – PG fee – Launcx fee
-        pendingAmount:    isSuccess
-          ? grossAmount - feeLauncxCalc
-          : null,
+    // pendingAmount = grossAmount – PG fee – Launcx fee
+    pendingAmount:    isSuccess
+      ? grossDec
+          .minus(feeLauncxCalc)
+          .toNumber()
+      : null,
 
-        // settlementAmount masih null sampai settlement cron/job jalan
-        settlementAmount: null
-      }
-    })
+    settlementAmount: null
+  }
+})
 
     // 10) Ambil kembali order termasuk feeLauncx & pendingAmount
     const order = await prisma.order.findUnique({

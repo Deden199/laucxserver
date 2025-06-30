@@ -9,31 +9,52 @@ import logger from '../logger'
 import { DisbursementStatus } from '@prisma/client'
 
 export async function listWithdrawals(req: ClientAuthRequest, res: Response) {
-  // 1) Ambil partnerClientId dari clientUser yang sudah di-auth
+  // 1) Ambil partnerClientId + daftarnya children
   const user = await prisma.clientUser.findUnique({
     where: { id: req.clientUserId! },
-    select: { partnerClientId: true }
-  })
+    select: {
+      partnerClientId: true,
+      partnerClient: {
+        select: {
+          children: { select: { id: true } }
+        }
+      }
+    }
+  });
   if (!user) {
-    return res.status(404).json({ error: 'User tidak ditemukan' })
+    return res.status(404).json({ error: 'User tidak ditemukan' });
   }
-  const clientId = user.partnerClientId
 
-  // 2) Build filter berdasarkan clientId + query params
-  const { status, date_from, date_to, page = '1', limit = '20' } = req.query
-  const where: any = { partnerClientId: clientId }
-  if (status) where.status = status as string
+  const parentId = user.partnerClientId;
+  const childIds = user.partnerClient?.children.map(c => c.id) ?? [];
+
+  // 2) Baca query.clientId (optional) untuk override single-child
+  const { clientId: qClientId, status, date_from, date_to, page = '1', limit = '20' } = req.query;
+  let clientIds: string[];
+  if (typeof qClientId === 'string' && qClientId !== 'all') {
+    // child-only view
+    clientIds = [qClientId];
+  } else {
+    // parent view: include parent + semua children
+    clientIds = [parentId, ...childIds];
+  }
+
+  // 3) Build filter
+  const where: any = {
+    partnerClientId: { in: clientIds }
+  };
+  if (status) where.status = status as string;
   if (date_from || date_to) {
-    where.createdAt = {}
-    if (date_from) where.createdAt.gte = new Date(date_from as string)
-    if (date_to)   where.createdAt.lte = new Date(date_to   as string)
+    where.createdAt = {};
+    if (date_from) where.createdAt.gte = new Date(String(date_from));
+    if (date_to)   where.createdAt.lte = new Date(String(date_to));
   }
 
-  // 3) Pagination
-  const pageNum  = Math.max(1, parseInt(page as string, 10))
-  const pageSize = Math.min(100, parseInt(limit as string, 10))
+  // 4) Pagination
+  const pageNum  = Math.max(1, parseInt(page as string, 10));
+  const pageSize = Math.min(100, parseInt(limit as string, 10));
 
-  // 4) Query ke database
+  // 5) Query
   const [rows, total] = await Promise.all([
     prisma.withdrawRequest.findMany({
       where,
@@ -51,9 +72,9 @@ export async function listWithdrawals(req: ClientAuthRequest, res: Response) {
       },
     }),
     prisma.withdrawRequest.count({ where }),
-  ])
+  ]);
 
-  // 5) Format dan kirim response
+  // 6) Format dan kirim
   const data = rows.map(w => ({
     refId:         w.refId,
     bankName:      w.bankName,
@@ -62,10 +83,11 @@ export async function listWithdrawals(req: ClientAuthRequest, res: Response) {
     status:        w.status,
     createdAt:     w.createdAt.toISOString(),
     completedAt:   w.completedAt?.toISOString() ?? null,
-  }))
+  }));
 
-  return res.json({ data, total })
+  return res.json({ data, total });
 }
+
 // POST /api/v1/withdrawals/:id/retry
 export async function retryWithdrawal(req: Request, res: Response) {
   const clientId = (req as any).client.id as string

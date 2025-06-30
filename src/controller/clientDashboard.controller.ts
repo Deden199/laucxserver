@@ -79,62 +79,83 @@ export async function updateClientCallbackUrl(req: ClientAuthRequest, res: Respo
 }
 export async function getClientDashboard(req: ClientAuthRequest, res: Response) {
   try {
-    console.log('--- getClientDashboard START ---')
-    console.log('clientUserId:', req.clientUserId)
-    console.log('query params:', req.query)
+    console.log('--- getClientDashboard START ---');
+    console.log('clientUserId:', req.clientUserId);
+    console.log('query params:', req.query);
 
-    // (1) ambil user + partnerClient + children
+    // (1) ambil user + partnerClient + children (termasuk balance)
     const user = await prisma.clientUser.findUnique({
       where: { id: req.clientUserId! },
       include: {
         partnerClient: {
-          include: {
-            children: { select: { id: true, name: true } }
+          select: {
+            id: true,
+            name: true,
+            balance: true,         // ambil balance parent
+            children: {
+              select: {
+                id: true,
+                name: true,
+                balance: true      // ambil balance tiap child
+              }
+            }
           }
         }
       }
-    })
+    });
     if (!user) {
-      console.warn('User tidak ditemukan untuk id', req.clientUserId)
-      return res.status(404).json({ error: 'User tidak ditemukan' })
+      console.warn('User tidak ditemukan untuk id', req.clientUserId);
+      return res.status(404).json({ error: 'User tidak ditemukan' });
     }
-    const pc = user.partnerClient!
-    console.log('partnerClient loaded:', { id: pc.id, childrenCount: pc.children.length })
+    const pc = user.partnerClient!;
+    console.log('partnerClient loaded:', { id: pc.id, childrenCount: pc.children.length });
 
     // (2) parse tanggal
-    const dateFrom = req.query.date_from ? new Date(String(req.query.date_from)) : undefined
-    const dateTo   = req.query.date_to   ? new Date(String(req.query.date_to))   : undefined
-    console.log('dateFrom:', dateFrom, 'dateTo:', dateTo)
-    const createdAtFilter: any = {}
-    if (dateFrom) createdAtFilter.gte = dateFrom
-    if (dateTo)   createdAtFilter.lte = dateTo
+    const dateFrom = req.query.date_from ? new Date(String(req.query.date_from)) : undefined;
+    const dateTo   = req.query.date_to   ? new Date(String(req.query.date_to))   : undefined;
+    const createdAtFilter: any = {};
+    if (dateFrom) createdAtFilter.gte = dateFrom;
+    if (dateTo)   createdAtFilter.lte = dateTo;
 
     // (3) build list of IDs to query
-    let clientIds: string[]
-    if (typeof req.query.clientId === 'string' && req.query.clientId !== 'all' && req.query.clientId.trim()) {
-      clientIds = [req.query.clientId]
-      console.log('override dengan single child:', clientIds)
+    let clientIds: string[];
+    if (typeof req.query.clientId === 'string'
+        && req.query.clientId !== 'all'
+        && req.query.clientId.trim()
+    ) {
+      clientIds = [req.query.clientId];  // child-only
+      console.log('override dengan single child:', clientIds);
     } else if (pc.children.length > 0) {
-      clientIds = [pc.id, ...pc.children.map(c => c.id)]
-      console.log('parent + children => clientIds:', clientIds)
+      clientIds = [pc.id, ...pc.children.map(c => c.id)];  // parent + all children
+      console.log('parent + children => clientIds:', clientIds);
     } else {
-      clientIds = [pc.id]
-      console.log('user biasa => clientIds:', clientIds)
+      clientIds = [pc.id];  // no children
+      console.log('user biasa => clientIds:', clientIds);
     }
 
-    // (4a) total pending
+    // (4a) total pending seperti sebelumnya
     const pendingAgg = await prisma.order.aggregate({
       _sum: { pendingAmount: true },
       where: {
         partnerClientId: { in: clientIds },
         status: 'PENDING_SETTLEMENT',
-        ...(dateFrom||dateTo ? { createdAt: createdAtFilter } : {})
+        ...(dateFrom || dateTo ? { createdAt: createdAtFilter } : {})
       }
-    })
-    const totalPending = pendingAgg._sum.pendingAmount ?? 0
-    console.log('totalPending:', totalPending)
+    });
+    const totalPending = pendingAgg._sum.pendingAmount ?? 0;
+    console.log('totalPending:', totalPending);
 
-    // (4b) ambil transaksi
+    // (4b) HITUNG TOTAL ACTIVE BALANCE BERDASARKAN clientIds
+    const parentBal = clientIds.includes(pc.id)
+      ? pc.balance ?? 0
+      : 0;
+    const childrenBal = pc.children
+      .filter(c => clientIds.includes(c.id))
+      .reduce((sum, c) => sum + (c.balance ?? 0), 0);
+    const totalActive = parentBal + childrenBal;
+    console.log('totalActive (filtered):', totalActive);
+
+    // (4c) ambil transaksi seperti biasa
     const orders = await prisma.order.findMany({
       where: {
         partnerClientId: { in: clientIds },
@@ -147,53 +168,49 @@ export async function getClientDashboard(req: ClientAuthRequest, res: Response) 
         amount: true, feeLauncx: true, settlementAmount: true,
         pendingAmount: true, status: true, createdAt: true
       }
-    })
-    console.log(`ditemukan ${orders.length} order(s)`)
+    });
+    console.log(`ditemukan ${orders.length} order(s)`);
 
-    // (5) hitung total non‐pending
+    // (5) hitung totalTransaksi
     const totalTransaksi = orders
       .filter(o => o.status !== 'PENDING_SETTLEMENT')
-      .reduce((sum, o) => sum + o.amount, 0)
-    console.log('totalTransaksi:', totalTransaksi)
+      .reduce((sum, o) => sum + o.amount, 0);
+    console.log('totalTransaksi:', totalTransaksi);
 
-// (6) map
-const transactions = orders.map(o => {
-  // langsung pakai pendingAmount atau settlementAmount sebagai net
-  const netSettle = o.status === 'PENDING_SETTLEMENT'
-    ? (o.pendingAmount ?? 0)         // sudah net sejak callback
-    : (o.settlementAmount ?? 0)      // sudah net sejak create/order settled
+    // (6) map ke response
+    const transactions = orders.map(o => {
+      const netSettle = o.status === 'PENDING_SETTLEMENT'
+        ? (o.pendingAmount ?? 0)
+        : (o.settlementAmount ?? 0);
+      return {
+        id: o.id,
+        date: o.createdAt.toISOString(),
+        reference: o.qrPayload ?? '',
+        rrn: o.rrn ?? '',
+        playerId: o.playerId,
+        amount: o.amount,
+        feeLauncx: o.feeLauncx ?? 0,
+        netSettle,
+        settlementStatus: o.status,
+        status: o.status === 'DONE' ? 'DONE' : 'SUCCESS'
+      };
+    });
 
-  return {
-    id: o.id,
-    date: o.createdAt.toISOString(),
-    reference: o.qrPayload ?? '',
-    rrn: o.rrn ?? '',
-    playerId: o.playerId,
-    amount: o.amount,                 // gross, untuk info saja
-    feeLauncx: o.feeLauncx ?? 0,      // fee internal
-    netSettle,                        // net langsung
-    settlementStatus: o.status,
-    status: o.status === 'DONE' ? 'DONE' : 'SUCCESS'
-  }
-})
-
-
-    console.log('mengirim response dengan children:', pc.children)
-    console.log('--- getClientDashboard END ---')
-
+    console.log('--- getClientDashboard END ---');
     return res.json({
-      balance: pc.balance,
+      balance: totalActive,      // pakai totalActive yang sudah ter-filter
       totalPending,
       totalTransaksi,
       transactions,
-      children: pc.children
-    })
+      children: pc.children      // tetap kirim semua children untuk dropdown
+    });
 
   } catch (err: any) {
-    console.error('Error di getClientDashboard:', err)
-    return res.status(500).json({ error: err.message || 'Internal Server Error' })
+    console.error('Error di getClientDashboard:', err);
+    return res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
 }
+
 
 export async function exportClientTransactions(req: ClientAuthRequest, res: Response) {
   // (1) load user + children
@@ -384,36 +401,49 @@ export const requestWithdraw = async (req: ClientAuthRequest, res: Response) => 
   try {
     const { account_number, bank_code, account_name_alias, amount } = req.body
 
-    // 1) Ambil user & partnerClient
+    // 1) Ambil user + partnerClient + children
     const user = await prisma.clientUser.findUnique({
       where: { id: req.clientUserId! },
-      include: { partnerClient: true },
+      include: {
+        partnerClient: {
+          select: {
+            id: true,
+            balance: true,
+            children: { select: { id: true } }
+          }
+        }
+      }
     })
-    if (!user) return res.status(404).json({ error: 'User tidak ditemukan' })
-    const pc = user.partnerClient
+    if (!user) {
+      return res.status(404).json({ error: 'User tidak ditemukan' })
+    }
+    const pc = user.partnerClient!
 
-    // 2) Cek saldo aktif
-    if (amount > pc.balance) {
-      return res.status(400).json({ error: 'Insufficient balance' })
+    // 2) Jika ini parent (punya children), tolak request
+    if (pc.children.length > 0) {
+      return res
+        .status(403)
+        .json({ error: 'Parent hanya memiliki hak baca; tidak dapat melakukan withdraw' })
     }
 
-    // 3) Validasi account via Hilogate
+    // 3) (Hanya child sampai sini) cek saldo aktif
+    if (amount > pc.balance) {
+      return res.status(400).json({ error: 'Saldo tidak mencukupi' })
+    }
+
+    // 4) Validasi account via Hilogate
     const valid = (await hilogateClient.validateAccount(account_number, bank_code)).data
     if (valid.status !== 'valid') {
-      return res.status(400).json({ error: 'Invalid account' })
+      return res.status(400).json({ error: 'Akun bank tidak valid' })
     }
-
-    // 4) Ambil nama pemilik
     const acctHolder = valid.account_holder
-
-    // 5) Lookup nama bank
     const bankName   = BANK_NAMES[bank_code] ?? ''
-    const branchName = ''  // tidak tersedia di Hilogate
+    const branchName = ''
 
-    // 6) Tentukan alias
+    // 5) Tentukan alias
     const alias = account_name_alias ?? acctHolder
 
-    // 7) Buat record withdraw + hold saldo
+    // 6) Buat record withdraw + hold saldo
     const refId = `wd-${Date.now()}`
     const wr = await prisma.withdrawRequest.create({
       data: {
@@ -426,15 +456,15 @@ export const requestWithdraw = async (req: ClientAuthRequest, res: Response) => 
         bankName,
         branchName,
         amount,
-        status:           DisbursementStatus.PENDING,
-      },
+        status:           DisbursementStatus.PENDING
+      }
     })
     await prisma.partnerClient.update({
       where: { id: pc.id },
-      data: { balance: { decrement: amount } },
+      data: { balance: { decrement: amount } }
     })
 
-    // 8) Kirim ke Hilogate
+    // 7) Kirim ke Hilogate & update status seperti biasa…
     const hg = await hilogateClient.createWithdrawal({
       ref_id:             refId,
       amount,
@@ -445,37 +475,27 @@ export const requestWithdraw = async (req: ClientAuthRequest, res: Response) => 
       bank_code,
       bank_name:          bankName,
       branch_name:        branchName,
-      description:        `Withdraw Rp ${amount}`,
+      description:        `Withdraw Rp ${amount}`
     })
 
-    // 9) Mapping status
+    // 8) Mapping status + idempotent update
     const { id: pgId, status: hgStatus, is_transfer_process } = hg.data
-    let newStatus: DisbursementStatus
-    if (['WAITING','PENDING','PROCESSING'].includes(hgStatus)) {
-      newStatus = DisbursementStatus.PENDING
-    } else if (['COMPLETED','SUCCESS'].includes(hgStatus)) {
-      newStatus = DisbursementStatus.COMPLETED
-    } else {
-      newStatus = DisbursementStatus.FAILED
-    }
+    const newStatus: DisbursementStatus =
+      ['WAITING','PENDING','PROCESSING'].includes(hgStatus)  ? DisbursementStatus.PENDING  :
+      ['COMPLETED','SUCCESS'].includes(hgStatus)            ? DisbursementStatus.COMPLETED :
+                                                             DisbursementStatus.FAILED
 
-    // 10) Idempotent update + retry deadlock
-    const result = await retry(() =>
+    await retry(() =>
       prisma.withdrawRequest.updateMany({
         where: { refId, status: DisbursementStatus.PENDING },
         data: {
           paymentGatewayId:  pgId,
           isTransferProcess: is_transfer_process,
-          status:            newStatus,
-        },
+          status:            newStatus
+        }
       })
     )
 
-    if (result.count === 0) {
-      console.warn(`[withdraw] refId=${refId} sudah di-update sebelumnya`)
-    }
-
-    // 11) Return response
     return res.status(201).json({ id: wr.id, refId, status: newStatus })
 
   } catch (err: any) {

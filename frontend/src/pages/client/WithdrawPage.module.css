@@ -87,3 +87,37 @@
 .btnPrimary:hover{ background:#4f46e5; }
 
 .error       { color:#b91c1c; font-size:.875rem; margin-top:.5rem; }
+/* Dropdown styling */
+.childSelector {
+  margin-bottom: 16px;
+  display: inline-block;
+}
+
+.childSelector label {
+  font-weight: 500;
+  margin-right: 8px;
+  color: #333;
+}
+
+.childSelector select {
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.childSelector select:focus {
+  border-color: #3182ce;
+  outline: none;
+}
+.pageError {
+  color: #c53030;
+  background: #fff5f5;
+  border: 1px solid #fed7d7;
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+

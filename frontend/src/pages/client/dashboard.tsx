@@ -170,7 +170,12 @@ export default function ClientDashboardPage() {
       <aside className={styles.sidebar}>
         <section className={styles.statsGrid}>
           <div className={`${styles.card} ${styles.activeBalance}`}>
-            <Wallet className={styles.cardIcon} /><h2>Saldo Aktif</h2>
+            <Wallet className={styles.cardIcon} /><h2>
+  Saldo Aktif{' '}
+  {selectedChild === 'all'
+    ? '(Semua Child)'
+    : `(${children.find(c => c.id === selectedChild)?.name})`}
+</h2>
             <p>{balance.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}</p>
           </div>
           <div className={styles.card}>
