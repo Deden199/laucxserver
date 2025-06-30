@@ -1,6 +1,10 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { v4 as uuid } from 'uuid';
+import crypto from 'crypto'
+import axios from 'axios'
+import HilogateClient from '../../service/hilogateClient'
+
 
 const prisma = new PrismaClient();
 
@@ -135,153 +139,187 @@ export const regenerateApiKey = async (_req: Request, res: Response) => {
   });
   res.json({ apiKey: client.apiKey, apiSecret: client.apiSecret });
 };
-// src/controller/admin/merchant.controller.ts
-
-export const getDashboardTransactions = async (req: Request, res: Response) => {
+export async function getDashboardTransactions(req: Request, res: Response) {
   try {
-    const { date_from, date_to, merchantId } = req.query as {
-      date_from: string
-      date_to?: string
-      merchantId?: string
+    // (1) parse tanggal & merchant filter
+    const { date_from, date_to, merchantId } = req.query as any;
+    const dateFrom = date_from ? new Date(String(date_from)) : undefined;
+    const dateTo   = date_to   ? new Date(String(date_to))   : undefined;
+    const createdAtFilter: any = {};
+    if (dateFrom && !isNaN(dateFrom.getTime())) createdAtFilter.gte = dateFrom;
+    if (dateTo   && !isNaN(dateTo.getTime()))   createdAtFilter.lte = dateTo;
+
+    // (2) build where untuk orders
+    const whereOrders: any = {
+      status: { in: ['SUCCESS', 'DONE', 'SETTLED', 'PENDING_SETTLEMENT'] },
+      ...(dateFrom || dateTo ? { createdAt: createdAtFilter } : {}),
+    };
+    if (merchantId && merchantId !== 'all') {
+      whereOrders.merchantId = merchantId;
     }
 
-    // parse tanggal
-    const dateFrom = new Date(date_from)
-    const dateTo   = date_to ? new Date(date_to) : undefined
-    const createdAt: any = {}
-    if (dateFrom) createdAt.gte = dateFrom
-    if (dateTo)   createdAt.lte = dateTo
+    // (3) hitung totalPending
+    const pendingAgg = await prisma.order.aggregate({
+      _sum: { pendingAmount: true },
+      where: { ...whereOrders, status: 'PENDING_SETTLEMENT' }
+    });
+    const totalPending = pendingAgg._sum.pendingAmount ?? 0;
 
-    // build where clause: hanya status sukses
-    const where: any = {
-      createdAt,
-      status: { in: ['SUCCESS', 'DONE', 'SETTLED','PENDING_SETTLEMENT'] },
-      ...(merchantId && merchantId !== 'all' ? { merchantId } : {})
+    // (4) hitung activeBalance via orders
+    const settleAgg = await prisma.order.aggregate({
+      _sum: {
+        settlementAmount: true,
+        feeLauncx:        true,
+        fee3rdParty:      true
+      },
+      where: { ...whereOrders, status: { in: ['SUCCESS','DONE','SETTLED'] } }
+    });
+    const totalSettled  = settleAgg._sum.settlementAmount ?? 0;
+    const totalFeeL     = settleAgg._sum.feeLauncx        ?? 0;
+    const totalFee3rd   = settleAgg._sum.fee3rdParty      ?? 0;
+    const ordersActiveBalance = totalSettled - totalFeeL - totalFee3rd;
+
+    // (5) ambil saldo merchant dari partnerClient
+    const pcWhere: any = {};
+    if (merchantId && merchantId !== 'all') {
+      pcWhere.id = merchantId;
     }
+    const merchants = await prisma.partnerClient.findMany({
+      where: pcWhere,
+      select: { balance: true }
+    });
+    const totalMerchantBalance = merchants
+      .map(m => m.balance)
+      .reduce((sum, b) => sum + b, 0);
 
+    // (6) ambil detail orders
     const orders = await prisma.order.findMany({
-      where,
+      where: whereOrders,
       orderBy: { createdAt: 'desc' },
       select: {
-        id: true,
-        createdAt: true,
-        userId: true,
-        rrn: true,
-        amount: true,
-        feeLauncx: true,
-        fee3rdParty: true,
+        id:               true,
+        createdAt:        true,
+        playerId:         true,
+        qrPayload:        true,
+        rrn:              true,
+        amount:           true,
+        feeLauncx:        true,
+        fee3rdParty:      true,
         settlementAmount: true,
-        status: true,
+        pendingAmount:    true,
+        status:           true,
       }
-    })
+    });
 
-    const payload = orders.map(o => {
-      const feeL    = o.feeLauncx ?? 0
-      const feeP    = o.fee3rdParty ?? 0
-      const netSettle = (o.settlementAmount ?? 0) - feeL
+    // (7) map ke format FE
+    const transactions = orders.map(o => {
+      const amt        = o.amount          ?? 0;
+      const feeL       = o.feeLauncx       ?? 0;
+      const feeP       = o.fee3rdParty     ?? 0;
+      const pendAmt    = o.pendingAmount   ?? 0;
+      const settledAmt = o.settlementAmount ?? o.amount ?? 0;
+      const base       = o.status === 'PENDING_SETTLEMENT' ? pendAmt : settledAmt;
+      const netSettle  = base - feeL - feeP;
 
       return {
-        id:        o.id,
-        createdAt: o.createdAt,
-        buyerId:   o.userId,
-        reference: o.rrn,
-        amount:    o.amount ?? 0,
-        feeLauncx: feeL,
-        feePg:     feeP,
-        netProfit: feeL - feeP,
+        id:               o.id,
+        date:             o.createdAt.toISOString(),
+        reference:        o.qrPayload   ?? '',
+        rrn:              o.rrn         ?? '',
+        playerId:         o.playerId,
+        amount:           amt,
+        feeLauncx:        feeL,
+        feePg:            feeP,
         netSettle,
-        status:    o.status,
-      }
-    })
+        status:           o.status === 'DONE' ? 'DONE' : 'SUCCESS',
+        settlementStatus: o.status,
+      };
+    });
 
-    res.json(payload)
+    // (8) kembalikan JSON
+    return res.json({
+      transactions,
+      totalPending,
+      ordersActiveBalance,    // active dari order‐aggregate
+      totalMerchantBalance    // total balance dari partnerClient.balance
+    });
+
   } catch (err: any) {
-    console.error('[getDashboardTransactions]', err)
-    res.status(500).json({ error: 'Failed to fetch dashboard transactions' })
+    console.error('[getDashboardTransactions]', err);
+    return res.status(500).json({ error: 'Failed to fetch dashboard transactions' });
   }
 }
 
 /**
- * 13. GET /merchant/dashboard/summary
- *     Hitung balance Hilogate & active balance
+ * GET /admin/merchants/dashboard/summary
  */
-export const getDashboardSummary = async (req: Request, res: Response) => {
+function makeSignature(path: string, secret: string): string {
+  return crypto
+    .createHash('md5')
+    .update(path + secret, 'utf8')
+    .digest('hex')
+}
+
+
+
+export const getDashboardSummary = async (_req, res) => {
   try {
-    const { date_from, date_to, merchantId } = req.query as {
-      date_from: string
-      date_to?: string
-      merchantId?: string
-    }
-
-    // parse tanggal & where clause seperti biasa…
-    const dateFrom = new Date(date_from)
-    const dateTo   = date_to ? new Date(date_to) : undefined
-    const createdAt: any = {}
-    if (dateFrom) createdAt.gte = dateFrom
-    if (dateTo)   createdAt.lte = dateTo
-
-    const baseWhere: any = {
-      createdAt,
-      ...(merchantId && merchantId!=='all' ? { merchantId } : {})
-    }
-
-    // total pending (gross)
-    const pendAgg = await prisma.order.aggregate({
-      _sum: { pendingAmount: true },
-      where: { ...baseWhere, status: 'PENDING_SETTLEMENT' }
-    })
-    const totalPending = pendAgg._sum.pendingAmount ?? 0
-
-    // total settled (net)
-    const settleAgg = await prisma.order.aggregate({
-      _sum: { settlementAmount: true },
-      where: { ...baseWhere, status: { in: ['SUCCESS','DONE','SETTLED'] } }
-    })
-    const totalSettled = settleAgg._sum.settlementAmount ?? 0
-
-    // total fee PG (sum fee3rdParty)
-    const feeAgg = await prisma.order.aggregate({
-      _sum: { fee3rdParty: true },
-      where: { ...baseWhere, status: { in: ['SUCCESS','DONE','SETTLED'] } }
-    })
-    const totalFeePg = feeAgg._sum.fee3rdParty ?? 0
-
-    // total netProfit (sum feeLauncx – fee3rdParty)
-    const profitAgg = await prisma.order.findMany({
-      where: { ...baseWhere, status: { in: ['SUCCESS','DONE','SETTLED'] } },
-      select: { feeLauncx: true, fee3rdParty: true }
-    })
-    const totalNetProfit = profitAgg
-      .reduce((sum, o) => sum + ((o.feeLauncx ?? 0) - (o.fee3rdParty ?? 0)), 0)
-
-    // count transaksi sukses
-    const totalTrans = await prisma.order.count({
-      where: { ...baseWhere, status: { in: ['SUCCESS','DONE','SETTLED'] } }
-    })
-
-    // hilogateBalance & activeBalance tetap seperti sebelumnya
-    const hilogateAgg = await prisma.order.aggregate({
-      _sum: { settlementAmount: true },
-      where: { ...baseWhere, status: { in: ['SUCCESS','DONE','SETTLED'] } }
-    })
-    const activeAgg = await prisma.order.aggregate({
-      _sum: { pendingAmount: true },
-      where: { ...baseWhere, status: 'PENDING_SETTLEMENT' }
-    })
-    const hilogateBalance = hilogateAgg._sum.settlementAmount ?? 0
-    const activeBalance   = activeAgg._sum.pendingAmount   ?? 0
+    // pakai helper public
+    const result = await HilogateClient.getBalance()
+    const {
+      active_balance:   hilogateBalance = 0,
+      pending_balance:  activeBalance   = 0,
+      total_withdrawal,
+      pending_withdrawal
+    } = result.data
 
     return res.json({
       hilogateBalance,
       activeBalance,
-      totalPending,
-      totalSettled,
-      totalFeePg,
-      totalNetProfit,
-      totalTrans,
+      total_withdrawal,
+      pending_withdrawal
     })
-  } catch (err: any) {
+  } catch (err) {
     console.error('[getDashboardSummary]', err)
-    res.status(500).json({ error: 'Failed to fetch dashboard summary' })
+    return res.status(500).json({ error: 'Failed to fetch Hilogate balance' })
   }
 }
+
+export const getPlatformProfit = async (req: Request, res: Response) => {
+  try {
+    const { date_from, date_to, merchantId } = req.query as any;
+
+    // 1. Filter status
+    const where: any = { status: 'SETTLED' };
+
+    // 2. Pakai createdAt sebagai filter tanggal
+    if (date_from) {
+      where.createdAt = { gte: new Date(date_from) };
+    }
+    if (date_to) {
+      where.createdAt = {
+        ...(where.createdAt || {}),
+        lte: new Date(date_to)
+      };
+    }
+    if (merchantId && merchantId !== 'all') {
+      where.merchantId = merchantId;
+    }
+
+    // 3. Ambil feeLauncx & fee3rdParty
+    const profitTxs = await prisma.order.findMany({
+      where,
+      select: { feeLauncx: true, fee3rdParty: true }
+    });
+
+    // 4. Hitung totalProfit
+    const totalProfit = profitTxs.reduce((sum, t) => {
+      return sum + ((t.feeLauncx ?? 0) - (t.fee3rdParty ?? 0));
+    }, 0);
+
+    return res.json({ totalProfit });
+  } catch (err: any) {
+    console.error('[getPlatformProfit]', err);
+    return res.status(500).json({ error: err.message });
+  }
+};

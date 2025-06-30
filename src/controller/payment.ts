@@ -116,7 +116,7 @@ export const transactionCallback = async (req: Request, res: Response) => {
       ref_id: orderId,
       status: pgStatus,
       net_amount,
-      fee,
+      total_fee,
       qr_string,
       settlement_status,
     } = full
@@ -143,16 +143,20 @@ await prisma.order.update({
   data: {
     status:           newStatus,
     settlementStatus: newSetSt,
-    // simpan gross (full.amount) di pendingAmount
-    pendingAmount:    isSuccess ? full.amount : null,
-    // simpan net (net_amount) di settlementAmount—untuk nanti di UI
-    settlementAmount: isSuccess ? null       : net_amount,
     qrPayload:        qr_string ?? null,
     updatedAt:        new Date(),
-    fee3rdParty:      fee,       
 
+    // simpan fee pihak ketiga (PG fee) selalu
+    fee3rdParty:      total_fee,
+
+    // jika masih pending settlement, simpan full amount
+    pendingAmount:    newSetSt === 'PENDING_SETTLEMENT' ? full.amount : null,
+
+    // jika sudah settled, simpan net_amount
+    settlementAmount: newSetSt === 'SETTLED'             ? net_amount  : null,
   }
 })
+
 
 // 8) Ambil kembali order dari DB, termasuk field internal
 const order = await prisma.order.findUnique({

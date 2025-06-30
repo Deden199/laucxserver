@@ -32,27 +32,40 @@ class HilogateClient {
       .digest('hex');
     return expected === signature;
   }
-
+  public async getBalance() {
+    // note: request tetap private
+    return this.request('get', '/api/v1/balance')
+  }
   /** Validasi rekening bank */
   public async validateAccount(account_number: string, bank_code: string): Promise<any> {
     return this.request('post', '/api/v1/bank-accounts/validate', { account_number, bank_code });
   }
 
   /** Internal request helper */
-  private async request(
-    method: 'get' | 'post' | 'patch',
-    path: string,
-    body: any = null
-  ): Promise<any> {
-    const signature = this.sign(path, body);
-    const res = await this.axiosInst.request({ 
-      method, 
-      url: path, 
-      headers: { 'X-Signature': signature }, 
-      data: body 
+private async request(
+  method: 'get' | 'post' | 'patch',
+  path: string,
+  body: any = null
+): Promise<any> {
+  const signature = this.sign(path, body);
+  const headers = { 'X-Signature': signature };
+
+  if (method === 'get') {
+    // GET tanpa body
+    const res = await this.axiosInst.get(path, { headers });
+    return res.data;
+  } else {
+    // POST/PATCH dengan body
+    const res = await this.axiosInst.request({
+      method,
+      url: path,
+      headers,
+      data: body
     });
     return res.data;
   }
+}
+
 
   /** Buat transaksi QRIS */
   public async createTransaction(opts: {

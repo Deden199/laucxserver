@@ -34,5 +34,6 @@ router.delete('/:id/pg/:subId', ctrl.disconnectPG)
 // Admin Dashboard: transaksi & summary
 router.get('/dashboard/transactions', ctrl.getDashboardTransactions)
 router.get('/dashboard/summary',      ctrl.getDashboardSummary)
+router.get('/dashboard/profit',      ctrl.getPlatformProfit)
 
 export default router
