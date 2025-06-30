@@ -12,10 +12,14 @@ function generateSignature(path: string, secretKey: string): string {
     .digest('hex')
 }
 
+let cronStarted = false
 export function scheduleSettlementChecker() {
+  if (cronStarted) return
+  cronStarted = true
+
   // Jadwalkan setiap hari jam 17:00 Asia/Jakarta
   cron.schedule(
-    '0 17 * * *',     // ── Menit 0, Jam 17, tiap hari
+    '0 17 * * *',    // ── Menit 0, Jam 17, tiap hari
     async () => {
       logger.info('[SettlementCron] Mulai cek settlement…')
 
@@ -45,36 +49,39 @@ export function scheduleSettlementChecker() {
             `[SettlementCron][RAW] order=${o.id} payload=${JSON.stringify(resp.data)}`
           )
 
-          const tx = resp.data.data
+          const tx       = resp.data.data
           const settleSt = (tx.settlement_status ?? '').toUpperCase()
           const rrn      = tx.rrn ?? 'N/A'
 
-          // Log RRN & status settlement
           logger.info(`[SettlementCron] Order ${o.id} rrn = ${rrn}`)
           logger.info(`[SettlementCron] Order ${o.id} settlement_status = ${settleSt}`)
 
           if (['ACTIVE', 'SETTLED', 'COMPLETED'].includes(settleSt)) {
             const amt = o.pendingAmount ?? tx.net_amount
 
-            // a) update balance partner
-            await prisma.partnerClient.update({
-              where: { id: o.merchantId! },
-              data: { balance: { increment: amt } }
-            })
-
-            // b) tandai order settled & simpan rrn
-            await prisma.order.update({
-              where: { id: o.id },
+            // a) tandai order secara idempoten
+            const updateResult = await prisma.order.updateMany({
+              where: { id: o.id, status: 'PENDING_SETTLEMENT' },
               data: {
                 status:           'SETTLED',
                 settlementAmount: amt,
                 pendingAmount:    null,
-                rrn,               // simpan rrn
+                rrn,
                 updatedAt:        new Date()
               }
             })
 
-            logger.info(`[SettlementCron] Order ${o.id} settled (+${amt}), rrn=${rrn}`)
+            if (updateResult.count > 0) {
+              // b) hanya kredit balance jika pertama kali di-settle
+              await prisma.partnerClient.update({
+                where: { id: o.merchantId! },
+                data: { balance: { increment: amt } }
+              })
+
+              logger.info(`[SettlementCron] Order ${o.id} settled (+${amt}), rrn=${rrn}`)
+            } else {
+              logger.info(`[SettlementCron] Order ${o.id} sudah disettle, skip.`)
+            }
           } else {
             logger.info(
               `[SettlementCron] Order ${o.id} masih PENDING_SETTLEMENT (${settleSt}), rrn=${rrn}`
@@ -92,4 +99,3 @@ export function scheduleSettlementChecker() {
     }
   )
 }
-

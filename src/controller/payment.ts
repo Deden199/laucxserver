@@ -116,18 +116,19 @@ export const transactionCallback = async (req: Request, res: Response) => {
       ref_id: orderId,
       status: pgStatus,
       net_amount,
-      total_fee,
+      total_fee: pgFee,
       qr_string,
       settlement_status,
+      amount: grossAmount
     } = full
-    if (!orderId) throw new Error('Missing ref_id')
+    if (!orderId)         throw new Error('Missing ref_id')
     if (net_amount == null) throw new Error('Missing net_amount')
 
     // 5) Hitung status internal
-    const upStatus      = pgStatus.toUpperCase()
-    const isSuccess     = ['SUCCESS', 'DONE'].includes(upStatus)
-    const newStatus     = isSuccess ? 'PENDING_SETTLEMENT' : upStatus
-    const newSetSt      = settlement_status?.toUpperCase() ?? (isSuccess ? 'PENDING' : null)
+    const upStatus  = pgStatus.toUpperCase()
+    const isSuccess = ['SUCCESS', 'DONE'].includes(upStatus)
+    const newStatus = isSuccess ? 'PENDING_SETTLEMENT' : upStatus
+    const newSetSt  = settlement_status?.toUpperCase() ?? (isSuccess ? 'PENDING' : null)
 
     // 6) Ambil merchantId
     const existing = await prisma.order.findUnique({
@@ -137,68 +138,81 @@ export const transactionCallback = async (req: Request, res: Response) => {
     if (!existing) throw new Error(`Order ${orderId} not found`)
     const merchantId = existing.merchantId
 
-// step 7: simpan gross & net terpisah
-await prisma.order.update({
-  where: { id: orderId },
-  data: {
-    status:           newStatus,
-    settlementStatus: newSetSt,
-    qrPayload:        qr_string ?? null,
-    updatedAt:        new Date(),
+    // 7) Ambil konfigurasi fee partner
+    const partnerConfig = await prisma.partnerClient.findUnique({
+      where: { id: merchantId },
+      select: { feePercent: true, feeFlat: true }
+    })
+    if (!partnerConfig) throw new Error(`Partner ${merchantId} not found`)
+    const { feePercent = 0, feeFlat = 0 } = partnerConfig
 
-    // simpan fee pihak ketiga (PG fee) selalu
-    fee3rdParty:      total_fee,
+    // 8) Hitung fee Launcx
+    const feeLauncxCalc = feeFlat + Math.round(grossAmount * (feePercent / 100))
 
-    // jika masih pending settlement, simpan full amount
-    pendingAmount:    newSetSt === 'PENDING_SETTLEMENT' ? full.amount : null,
+    // 9) Simpan status, fee, dan amounts
+    await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        status:           newStatus,
+        settlementStatus: newSetSt,
+        qrPayload:        qr_string ?? null,
+        updatedAt:        new Date(),
 
-    // jika sudah settled, simpan net_amount
-    settlementAmount: newSetSt === 'SETTLED'             ? net_amount  : null,
-  }
-})
+        // fee pihak ketiga (PG) selalu
+        fee3rdParty:      pgFee,
 
+        // fee internal Launcx hanya saat sukses
+        feeLauncx:        isSuccess ? feeLauncxCalc : null,
 
-// 8) Ambil kembali order dari DB, termasuk field internal
-const order = await prisma.order.findUnique({
-  where: { id: orderId },
-  select: {
-    amount:           true,   // original input
-    feeLauncx:        true,
-    pendingAmount:    true,
-    settlementAmount: true
-  }
-})
-if (!order) throw new Error(`Order ${orderId} not found after update`)
+        // pendingAmount = gross – PG fee – Launcx fee
+        pendingAmount:    isSuccess
+          ? grossAmount - feeLauncxCalc
+          : null,
 
-    // 8) Ambil callbackUrl & secret partner
+        // settlementAmount masih null sampai settlement cron/job jalan
+        settlementAmount: null
+      }
+    })
+
+    // 10) Ambil kembali order termasuk feeLauncx & pendingAmount
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        amount:           true,   // gross
+        feeLauncx:        true,
+        pendingAmount:    true,
+        settlementAmount: true
+      }
+    })
+    if (!order) throw new Error(`Order ${orderId} not found after update`)
+
+    // 11) Ambil callbackUrl & secret partner
     const partner = await prisma.partnerClient.findUnique({
       where: { id: merchantId },
       select: { callbackUrl: true, callbackSecret: true }
     })
 
-    // 9) Forward hanya untuk transaksi SUCCESS/DONE
+    // 12) Forward hanya untuk transaksi SUCCESS/DONE
     if (isSuccess && partner?.callbackUrl && partner.callbackSecret) {
       const timestamp = new Date().toISOString()
       const nonce     = crypto.randomUUID()
-  const clientPayload = {
-    orderId,
-    status:           newStatus,
-    settlementStatus: newSetSt,
-    grossAmount:      order.amount,         // nilai asli
-    feeLauncx:        order.feeLauncx,      // fee internal
-    netAmount:        order.pendingAmount,  // net dari gateway
-    qrPayload:        qr_string,
-    timestamp,
-    nonce
-  }
+      const clientPayload = {
+        orderId,
+        status:           newStatus,
+        settlementStatus: newSetSt,
+        grossAmount:      order.amount,
+        feeLauncx:        order.feeLauncx,
+        netAmount:        order.pendingAmount,  // sekarang net
+        qrPayload:        qr_string,
+        timestamp,
+        nonce
+      }
 
-      // HMAC-SHA256 signature untuk client
       const clientSig = crypto
         .createHmac('sha256', partner.callbackSecret)
         .update(JSON.stringify(clientPayload))
         .digest('hex')
 
-      // Fire-and-forget forwarding
       axios.post(partner.callbackUrl, clientPayload, {
         headers: { 'X-Callback-Signature': clientSig },
         timeout: 5000
@@ -210,7 +224,7 @@ if (!order) throw new Error(`Order ${orderId} not found after update`)
       }))
     }
 
-    // 10) Kirim sukses ke Hilogate
+    // 13) Kirim sukses ke Hilogate
     return res
       .status(200)
       .json(createSuccessResponse({ message: 'OK' }))

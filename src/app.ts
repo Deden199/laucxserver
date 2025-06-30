@@ -73,20 +73,9 @@ app.set('trust proxy', 1);
 app.use(helmet());
 app.use(rateLimit({ windowMs: 60_000, max: 100, message: 'Too many requests, try again later.' }));
 
-const allowedOrigins = [
-  'https://launcx.com',
-  'https://checkout1.launcx.com',
-  'https://altcheckout.launcx.com',
-  'https://g2f.launcx.com',
-  'https://payment.launcx.com',
-  'https://c1.launcx.com',
-  'http://localhost:3000',
-  'http://localhost:3001',
-  `http://localhost:${config.api.port}`,
-];
 app.use(cors({
-  origin: (origin, cb) => cb(null, !origin || allowedOrigins.includes(origin)),
-  credentials: true,
+  origin: true,         // terima semua Origin yang dikirim client
+  credentials: true,    // tetap ijinkan cookie / header Authorization
 }));
 app.use(requestLogger);
 

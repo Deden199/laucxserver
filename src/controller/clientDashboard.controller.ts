@@ -156,24 +156,27 @@ export async function getClientDashboard(req: ClientAuthRequest, res: Response) 
       .reduce((sum, o) => sum + o.amount, 0)
     console.log('totalTransaksi:', totalTransaksi)
 
-    // (6) map
-    const transactions = orders.map(o => {
-      const netSettle = o.status === 'PENDING_SETTLEMENT'
-        ? (o.pendingAmount ?? 0) - (o.feeLauncx ?? 0)
-        : ((o.settlementAmount ?? o.amount) - (o.feeLauncx ?? 0))
-      return {
-        id: o.id,
-        date: o.createdAt.toISOString(),
-        reference: o.qrPayload ?? '',
-        rrn: o.rrn ?? '',
-        playerId: o.playerId,
-        amount: o.amount,
-        feeLauncx: o.feeLauncx ?? 0,
-        netSettle,
-        settlementStatus: o.status,
-        status: o.status === 'DONE' ? 'DONE' : 'SUCCESS'
-      }
-    })
+// (6) map
+const transactions = orders.map(o => {
+  // langsung pakai pendingAmount atau settlementAmount sebagai net
+  const netSettle = o.status === 'PENDING_SETTLEMENT'
+    ? (o.pendingAmount ?? 0)         // sudah net sejak callback
+    : (o.settlementAmount ?? 0)      // sudah net sejak create/order settled
+
+  return {
+    id: o.id,
+    date: o.createdAt.toISOString(),
+    reference: o.qrPayload ?? '',
+    rrn: o.rrn ?? '',
+    playerId: o.playerId,
+    amount: o.amount,                 // gross, untuk info saja
+    feeLauncx: o.feeLauncx ?? 0,      // fee internal
+    netSettle,                        // net langsung
+    settlementStatus: o.status,
+    status: o.status === 'DONE' ? 'DONE' : 'SUCCESS'
+  }
+})
+
 
     console.log('mengirim response dengan children:', pc.children)
     console.log('--- getClientDashboard END ---')
@@ -215,9 +218,10 @@ export async function exportClientTransactions(req: ClientAuthRequest, res: Resp
   if (dateTo)   createdAtFilter.lte = dateTo
 
   // (3) siapkan daftar IDs
-  const clientIds = req.isParent
-    ? (pc.children.length > 0 ? pc.children.map(c => c.id) : [])
-    : [pc.id]
+const clientIds = req.isParent
+  ? [pc.id, ...pc.children.map(c => c.id)]  // <<< include parent juga
+  : [pc.id]
+console.log('export clientIds:', clientIds)
 
   // (4) ambil semua order
   const orders = await prisma.order.findMany({

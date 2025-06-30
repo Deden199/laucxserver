@@ -18,7 +18,9 @@ type RawTx = {
   pendingAmount?: number
   settlementAmount?: number
   status?: string
-  settlementStatus?: string
+  settlementStatus: string
+  netSettle:        number   // <— baru
+
 }
 
 type Tx = {
@@ -136,35 +138,30 @@ export default function DashboardPage() {
         '/admin/merchants/dashboard/transactions',
         { params }
       )
+
       setTotalPending(data.totalPending)
       setActiveBalance(data.totalMerchantBalance)
 
-      const mapped: Tx[] = data.transactions.map(o => {
-        const amt = o.amount ?? 0
-        const feeL = o.feeLauncx ?? 0
-        const feeP = o.feePg ?? 0
-        const pendAmt = o.pendingAmount ?? 0
-        const settleAmt = o.settlementAmount ?? amt
-        const base = o.status === 'PENDING_SETTLEMENT' ? pendAmt : settleAmt
-        const netSettle = base - feeL - feeP
-        return {
-          id: o.id,
-          date: o.date,
-          rrn: o.rrn ?? '-',
-          playerId: o.playerId,
-          amount: amt,
-          feeLauncx: feeL,
-          feePg: feeP,
-          netSettle,
-          status: o.status === 'DONE' ? 'DONE' : 'SUCCESS',
-          settlementStatus: (o.settlementStatus ?? o.status ?? '').replace(/_/g, ' ')
-        }
-      })
+      // LANGSUNG PAKAI netSettle dari server
+      const mapped: Tx[] = data.transactions.map(o => ({
+        id:               o.id,
+        date:             o.date,
+        rrn:              o.rrn ?? '-',
+        playerId:         o.playerId,
+        amount:           o.amount   ?? 0,
+        feeLauncx:        o.feeLauncx?? 0,
+        feePg:            o.feePg    ?? 0,
+        netSettle:        o.netSettle,                // ← langsung pakai
+        status:           o.netSettle > 0 ? 'SUCCESS' : 'DONE',
+        settlementStatus: o.settlementStatus.replace(/_/g,' ')
+      }))
+
       const filtered = mapped.filter(t =>
         t.id.toLowerCase().includes(search.toLowerCase()) ||
         t.rrn.toLowerCase().includes(search.toLowerCase()) ||
         t.playerId.toLowerCase().includes(search.toLowerCase())
       )
+
       setTxs(filtered)
       setTotalTrans(filtered.length)
     } catch (e) {

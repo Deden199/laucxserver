@@ -142,55 +142,45 @@ export const regenerateApiKey = async (_req: Request, res: Response) => {
 export async function getDashboardTransactions(req: Request, res: Response) {
   try {
     // (1) parse tanggal & merchant filter
-    const { date_from, date_to, merchantId } = req.query as any;
-    const dateFrom = date_from ? new Date(String(date_from)) : undefined;
-    const dateTo   = date_to   ? new Date(String(date_to))   : undefined;
-    const createdAtFilter: any = {};
-    if (dateFrom && !isNaN(dateFrom.getTime())) createdAtFilter.gte = dateFrom;
-    if (dateTo   && !isNaN(dateTo.getTime()))   createdAtFilter.lte = dateTo;
+    const { date_from, date_to, merchantId } = req.query as any
+    const dateFrom = date_from ? new Date(String(date_from)) : undefined
+    const dateTo   = date_to   ? new Date(String(date_to))   : undefined
+    const createdAtFilter: any = {}
+    if (dateFrom && !isNaN(dateFrom.getTime())) createdAtFilter.gte = dateFrom
+    if (dateTo   && !isNaN(dateTo.getTime()))   createdAtFilter.lte = dateTo
 
     // (2) build where untuk orders
     const whereOrders: any = {
       status: { in: ['SUCCESS', 'DONE', 'SETTLED', 'PENDING_SETTLEMENT'] },
       ...(dateFrom || dateTo ? { createdAt: createdAtFilter } : {}),
-    };
+    }
     if (merchantId && merchantId !== 'all') {
-      whereOrders.merchantId = merchantId;
+      whereOrders.merchantId = merchantId
     }
 
-    // (3) hitung totalPending
+    // (3) total pending (net sudah di pendingAmount)
     const pendingAgg = await prisma.order.aggregate({
       _sum: { pendingAmount: true },
       where: { ...whereOrders, status: 'PENDING_SETTLEMENT' }
-    });
-    const totalPending = pendingAgg._sum.pendingAmount ?? 0;
+    })
+    const totalPending = pendingAgg._sum.pendingAmount ?? 0
 
-    // (4) hitung activeBalance via orders
+    // (4) active balance via settlementAmount saja (net sudah di settlementAmount)
     const settleAgg = await prisma.order.aggregate({
-      _sum: {
-        settlementAmount: true,
-        feeLauncx:        true,
-        fee3rdParty:      true
-      },
-      where: { ...whereOrders, status: { in: ['SUCCESS','DONE','SETTLED'] } }
-    });
-    const totalSettled  = settleAgg._sum.settlementAmount ?? 0;
-    const totalFeeL     = settleAgg._sum.feeLauncx        ?? 0;
-    const totalFee3rd   = settleAgg._sum.fee3rdParty      ?? 0;
-    const ordersActiveBalance = totalSettled - totalFeeL - totalFee3rd;
+      _sum: { settlementAmount: true },
+      where: { ...whereOrders, status: { in: ['SUCCESS', 'DONE', 'SETTLED'] } }
+    })
+    const ordersActiveBalance = settleAgg._sum.settlementAmount ?? 0
 
-    // (5) ambil saldo merchant dari partnerClient
-    const pcWhere: any = {};
-    if (merchantId && merchantId !== 'all') {
-      pcWhere.id = merchantId;
-    }
+    // (5) total merchant balance dari partnerClient.balance
+    const pcWhere: any = {}
+    if (merchantId && merchantId !== 'all') pcWhere.id = merchantId
     const merchants = await prisma.partnerClient.findMany({
       where: pcWhere,
       select: { balance: true }
-    });
+    })
     const totalMerchantBalance = merchants
-      .map(m => m.balance)
-      .reduce((sum, b) => sum + b, 0);
+      .reduce((sum, m) => sum + m.balance, 0)
 
     // (6) ambil detail orders
     const orders = await prisma.order.findMany({
@@ -205,21 +195,19 @@ export async function getDashboardTransactions(req: Request, res: Response) {
         amount:           true,
         feeLauncx:        true,
         fee3rdParty:      true,
-        settlementAmount: true,
-        pendingAmount:    true,
-        status:           true,
+        pendingAmount:    true,  // net untuk PENDING_SETTLEMENT
+        settlementAmount: true,  // net untuk settled
+        status:           true,  // PENDING_SETTLEMENT | SETTLED | etc.
       }
-    });
+    })
 
-    // (7) map ke format FE
+    // (7) map ke format FE, include netSettle
     const transactions = orders.map(o => {
-      const amt        = o.amount          ?? 0;
-      const feeL       = o.feeLauncx       ?? 0;
-      const feeP       = o.fee3rdParty     ?? 0;
-      const pendAmt    = o.pendingAmount   ?? 0;
-      const settledAmt = o.settlementAmount ?? o.amount ?? 0;
-      const base       = o.status === 'PENDING_SETTLEMENT' ? pendAmt : settledAmt;
-      const netSettle  = base - feeL - feeP;
+      const pend = o.pendingAmount ?? 0
+      const sett = o.settlementAmount ?? 0
+      const netSettle = o.status === 'PENDING_SETTLEMENT'
+        ? pend
+        : sett
 
       return {
         id:               o.id,
@@ -227,37 +215,26 @@ export async function getDashboardTransactions(req: Request, res: Response) {
         reference:        o.qrPayload   ?? '',
         rrn:              o.rrn         ?? '',
         playerId:         o.playerId,
-        amount:           amt,
-        feeLauncx:        feeL,
-        feePg:            feeP,
-        netSettle,
+        amount:           o.amount,          // gross
+        feeLauncx:        o.feeLauncx   ?? 0,
+        feePg:            o.fee3rdParty ?? 0,
+        netSettle,                            // langsung net
         status:           o.status === 'DONE' ? 'DONE' : 'SUCCESS',
-        settlementStatus: o.status,
-      };
-    });
+        settlementStatus: o.status              // raw DB flag
+      }
+    })
 
     // (8) kembalikan JSON
     return res.json({
       transactions,
       totalPending,
-      ordersActiveBalance,    // active dari order‐aggregate
-      totalMerchantBalance    // total balance dari partnerClient.balance
-    });
-
+      ordersActiveBalance,
+      totalMerchantBalance
+    })
   } catch (err: any) {
-    console.error('[getDashboardTransactions]', err);
-    return res.status(500).json({ error: 'Failed to fetch dashboard transactions' });
+    console.error('[getDashboardTransactions]', err)
+    return res.status(500).json({ error: 'Failed to fetch dashboard transactions' })
   }
-}
-
-/**
- * GET /admin/merchants/dashboard/summary
- */
-function makeSignature(path: string, secret: string): string {
-  return crypto
-    .createHash('md5')
-    .update(path + secret, 'utf8')
-    .digest('hex')
 }
 
 

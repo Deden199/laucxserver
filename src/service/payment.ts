@@ -101,15 +101,6 @@ export const createTransaction = async (
     const host = pickRandomHost();
     const checkoutUrl = `${host}/order/${refId}`;
 
-    // 6) Hitung fee Launcx & settlementAmount
-    const pc = await prisma.partnerClient.findUnique({ where: { id: request.buyer } });
-    if (!pc) {
-      console.warn(`PartnerClient ${request.buyer} not found, fee set to 0`);
-    }
-    const feeLauncx = pc
-      ? Math.round(amount * (pc.feePercent / 100) + pc.feeFlat)
-      : 0;
-    const settlementAmt = amount - feeLauncx;
 
     // 7) Simpan ke tabel order untuk dashboard client
     await prisma.order.create({
@@ -125,9 +116,8 @@ export const createTransaction = async (
         status: 'PENDING',
         qrPayload: qrString,
         checkoutUrl,
-        feeLauncx,
         fee3rdParty: 0,
-        settlementAmount: settlementAmt,
+        settlementAmount: amount,
       },
     });
 
