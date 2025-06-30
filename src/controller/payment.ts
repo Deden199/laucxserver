@@ -3,6 +3,7 @@ import crypto                           from 'crypto'
 import { Request, Response }            from 'express'
 import { config }                       from '../config'
 import logger                           from '../logger'
+import { ApiKeyRequest } from '../middleware/apiKeyAuth'
 import { getActiveProvidersForClient } from '../service/provider'
 import { createErrorResponse,
          createSuccessResponse }        from '../util/response'
@@ -14,51 +15,67 @@ import paymentService, {
 import { AuthRequest }                  from '../middleware/auth'
 import { prisma }               from '../core/prisma'
 
-export const createTransaction = async (req: AuthRequest, res: Response) => {
+export const createTransaction = async (req: ApiKeyRequest, res: Response) => {
   try {
-    /* 0) Ambil ID partner-client dari middleware apiKeyAuth */
-    const clientId = (req as any).clientId || req.userId   // <— penting
-
-    /* 1) merchantName default 'hilogate' */
+    // 0) Ambil partner-client ID dari apiKeyAuth
+    const clientId = req.clientId!
+    
+    // 1) merchantName default 'hilogate'
     const merchantName = String(req.body.merchantName ?? 'hilogate')
       .trim()
       .toLowerCase()
 
-    /* 2) price & playerId */
+    // 2) price & playerId
     const price    = Number(req.body.price ?? req.body.amount)
-    const playerId = String(req.body.playerId ?? clientId)  // fallback OK
+    const playerId = String(req.body.playerId ?? clientId)
 
-    /* 3) flow */
+    // 3) flow
     const flow = req.body.flow === 'redirect' ? 'redirect' : 'embed'
 
-    /* 4) validate */
-    if (isNaN(price) || price <= 0)
-      return res.status(400).json(createErrorResponse('`price` harus > 0'))
+    // 4) validate
+    if (isNaN(price) || price <= 0) {
+      return res
+        .status(400)
+        .json(createErrorResponse('`price` harus > 0'))
+    }
 
-    /* 5) Build Transaction – buyer = partner-client ID  */
+    // 5) Build Transaction – buyer = partner-client ID
     const trx: Transaction = {
       merchantName,
       price,
-      buyer: clientId,      // ✔ ID partner-client
-      playerId,             // ✔ username gamer
+      buyer: clientId,
+      playerId,
       flow,
     }
 
-    /* 6) Call service */
+    // 6) Call service
     const result = await paymentService.createTransaction(trx)
 
-    /* 7) Respond */
-    if (flow === 'redirect')
-      return res.status(303).location(result.checkoutUrl).send()
+    // 7) Respond
+    if (flow === 'redirect') {
+      return res
+        .status(303)
+        .location(result.checkoutUrl)
+        .send()
+    }
 
-    // embed -> full JSON
     const { orderId, qrPayload, checkoutUrl, totalAmount } = result
-    return res.status(201).json(
-      createSuccessResponse({ orderId, checkoutUrl, qrPayload, playerId, totalAmount })
-    )
+    return res
+      .status(201)
+      .json(
+        createSuccessResponse({
+          orderId,
+          checkoutUrl,
+          qrPayload,
+          playerId,
+          totalAmount,
+        })
+      )
 
   } catch (err: any) {
-    return res.status(500).json(createErrorResponse(err.message ?? 'Internal error'))
+    return res
+      .status(500)
+      .json(createErrorResponse(err.message ?? 'Internal error'))
   }
 }
 
@@ -99,6 +116,7 @@ export const transactionCallback = async (req: Request, res: Response) => {
       ref_id: orderId,
       status: pgStatus,
       net_amount,
+      fee,
       qr_string,
       settlement_status,
     } = full
@@ -131,6 +149,8 @@ await prisma.order.update({
     settlementAmount: isSuccess ? null       : net_amount,
     qrPayload:        qr_string ?? null,
     updatedAt:        new Date(),
+    fee3rdParty:      fee,       
+
   }
 })
 

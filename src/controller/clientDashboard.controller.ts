@@ -78,157 +78,240 @@ export async function updateClientCallbackUrl(req: ClientAuthRequest, res: Respo
   })
 }
 export async function getClientDashboard(req: ClientAuthRequest, res: Response) {
-  // 1) Ambil user & partnerClient
+  try {
+    console.log('--- getClientDashboard START ---')
+    console.log('clientUserId:', req.clientUserId)
+    console.log('query params:', req.query)
+
+    // (1) ambil user + partnerClient + children
+    const user = await prisma.clientUser.findUnique({
+      where: { id: req.clientUserId! },
+      include: {
+        partnerClient: {
+          include: {
+            children: { select: { id: true, name: true } }
+          }
+        }
+      }
+    })
+    if (!user) {
+      console.warn('User tidak ditemukan untuk id', req.clientUserId)
+      return res.status(404).json({ error: 'User tidak ditemukan' })
+    }
+    const pc = user.partnerClient!
+    console.log('partnerClient loaded:', { id: pc.id, childrenCount: pc.children.length })
+
+    // (2) parse tanggal
+    const dateFrom = req.query.date_from ? new Date(String(req.query.date_from)) : undefined
+    const dateTo   = req.query.date_to   ? new Date(String(req.query.date_to))   : undefined
+    console.log('dateFrom:', dateFrom, 'dateTo:', dateTo)
+    const createdAtFilter: any = {}
+    if (dateFrom) createdAtFilter.gte = dateFrom
+    if (dateTo)   createdAtFilter.lte = dateTo
+
+    // (3) build list of IDs to query
+    let clientIds: string[]
+    if (typeof req.query.clientId === 'string' && req.query.clientId !== 'all' && req.query.clientId.trim()) {
+      clientIds = [req.query.clientId]
+      console.log('override dengan single child:', clientIds)
+    } else if (pc.children.length > 0) {
+      clientIds = [pc.id, ...pc.children.map(c => c.id)]
+      console.log('parent + children => clientIds:', clientIds)
+    } else {
+      clientIds = [pc.id]
+      console.log('user biasa => clientIds:', clientIds)
+    }
+
+    // (4a) total pending
+    const pendingAgg = await prisma.order.aggregate({
+      _sum: { pendingAmount: true },
+      where: {
+        partnerClientId: { in: clientIds },
+        status: 'PENDING_SETTLEMENT',
+        ...(dateFrom||dateTo ? { createdAt: createdAtFilter } : {})
+      }
+    })
+    const totalPending = pendingAgg._sum.pendingAmount ?? 0
+    console.log('totalPending:', totalPending)
+
+    // (4b) ambil transaksi
+    const orders = await prisma.order.findMany({
+      where: {
+        partnerClientId: { in: clientIds },
+        status: { in: ['SUCCESS','DONE','SETTLED','PENDING_SETTLEMENT'] },
+        ...(dateFrom||dateTo ? { createdAt: createdAtFilter } : {})
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, qrPayload: true, rrn: true, playerId: true,
+        amount: true, feeLauncx: true, settlementAmount: true,
+        pendingAmount: true, status: true, createdAt: true
+      }
+    })
+    console.log(`ditemukan ${orders.length} order(s)`)
+
+    // (5) hitung total non‐pending
+    const totalTransaksi = orders
+      .filter(o => o.status !== 'PENDING_SETTLEMENT')
+      .reduce((sum, o) => sum + o.amount, 0)
+    console.log('totalTransaksi:', totalTransaksi)
+
+    // (6) map
+    const transactions = orders.map(o => {
+      const netSettle = o.status === 'PENDING_SETTLEMENT'
+        ? (o.pendingAmount ?? 0) - (o.feeLauncx ?? 0)
+        : ((o.settlementAmount ?? o.amount) - (o.feeLauncx ?? 0))
+      return {
+        id: o.id,
+        date: o.createdAt.toISOString(),
+        reference: o.qrPayload ?? '',
+        rrn: o.rrn ?? '',
+        playerId: o.playerId,
+        amount: o.amount,
+        feeLauncx: o.feeLauncx ?? 0,
+        netSettle,
+        settlementStatus: o.status,
+        status: o.status === 'DONE' ? 'DONE' : 'SUCCESS'
+      }
+    })
+
+    console.log('mengirim response dengan children:', pc.children)
+    console.log('--- getClientDashboard END ---')
+
+    return res.json({
+      balance: pc.balance,
+      totalPending,
+      totalTransaksi,
+      transactions,
+      children: pc.children
+    })
+
+  } catch (err: any) {
+    console.error('Error di getClientDashboard:', err)
+    return res.status(500).json({ error: err.message || 'Internal Server Error' })
+  }
+}
+
+export async function exportClientTransactions(req: ClientAuthRequest, res: Response) {
+  // (1) load user + children
   const user = await prisma.clientUser.findUnique({
     where: { id: req.clientUserId! },
-    include: { partnerClient: true }
+    include: {
+      partnerClient: {
+        include: {
+          children: { select: { id: true, name: true } }
+        }
+      }
+    }
   })
   if (!user) return res.status(404).json({ error: 'User tidak ditemukan' })
   const pc = user.partnerClient
 
-  // 2) Parse filter tanggal
+  // (2) parse tanggal
   const dateFrom = req.query.date_from ? new Date(String(req.query.date_from)) : undefined
   const dateTo   = req.query.date_to   ? new Date(String(req.query.date_to))   : undefined
   const createdAtFilter: any = {}
   if (dateFrom) createdAtFilter.gte = dateFrom
   if (dateTo)   createdAtFilter.lte = dateTo
 
-  // 3a) Total pending settlement
-  const pendingAgg = await prisma.order.aggregate({
-    _sum: { pendingAmount: true },
-    where: {
-      merchantId: pc.id,
-      status:     'PENDING_SETTLEMENT',
-      ...(dateFrom||dateTo ? { createdAt: createdAtFilter } : {})
-    }
-  })
-  const totalPending = pendingAgg._sum.pendingAmount ?? 0
+  // (3) siapkan daftar IDs
+  const clientIds = req.isParent
+    ? (pc.children.length > 0 ? pc.children.map(c => c.id) : [])
+    : [pc.id]
 
-  // 3b) Ambil semua order relevant, termasuk playerId
+  // (4) ambil semua order
   const orders = await prisma.order.findMany({
     where: {
-      merchantId: pc.id,
-      status: {
-        in: ['SUCCESS', 'DONE', 'SETTLED', 'PENDING_SETTLEMENT']
-      },
+      partnerClientId: { in: clientIds },
+      status: { in: ['SUCCESS','DONE','SETTLED','PENDING_SETTLEMENT'] },
       ...(dateFrom||dateTo ? { createdAt: createdAtFilter } : {})
     },
     orderBy: { createdAt: 'desc' },
     select: {
+      partnerClientId:  true,
       id:               true,
-      qrPayload:        true,
       rrn:              true,
-      playerId:         true,   // ← tambahkan
-      amount:           true,   // original input
-      feeLauncx:        true,
-      settlementAmount: true,
-      pendingAmount:    true,
-      status:           true,
-      createdAt:        true
-    }
-  })
-
-  // 4) Total transaksi (excl. pending)
-  const totalTransaksi = orders
-    .filter(o => o.status !== 'PENDING_SETTLEMENT')
-    .reduce((sum, o) => sum + o.amount, 0)
-
-  // 5) Map ke payload, sertakan playerId dan amount asli
-  const transactions = orders.map(o => {
-    const netSettle = o.status === 'PENDING_SETTLEMENT'
-      ? (o.pendingAmount ?? 0) - (o.feeLauncx ?? 0)
-      : ((o.settlementAmount ?? o.amount) - (o.feeLauncx ?? 0))
-
-    const mappedStatus = o.status === 'DONE' ? 'DONE' : 'SUCCESS'
-
-    return {
-      id:               o.id,
-      date:             o.createdAt.toISOString(),
-      reference:        o.qrPayload ?? '',
-      rrn:              o.rrn ?? '',
-      playerId:         o.playerId,      // ← kirim Player ID
-      amount:           o.amount,        // ← jumlah asli
-      feeLauncx:        o.feeLauncx ?? 0,
-      netSettle,
-      settlementStatus: o.status,
-      status:           mappedStatus
-    }
-  })
-
-  // 6) Return
-  return res.json({
-    balance:        pc.balance,
-    totalTransaksi,
-    totalPending,
-    transactions
-  })
-}
-
-
-/**
- * GET /api/v1/client/dashboard/export
- * – export semua transaksi SUCCESS, DONE, SETTLED, PENDING_SETTLEMENT ke Excel
- */
-export async function exportClientTransactions(req: ClientAuthRequest, res: Response) {
-  const user = await prisma.clientUser.findUnique({
-    where: { id: req.clientUserId! },
-    include: { partnerClient: true }
-  })
-  if (!user) return res.status(404).json({ error: 'User tidak ditemukan' })
-  const pcId = user.partnerClient.id
-
-  const orders = await prisma.order.findMany({
-    where: {
-      merchantId: pcId,
-      status: { in: ['SUCCESS', 'DONE', 'SETTLED', 'PENDING_SETTLEMENT'] }
-    },
-    orderBy: { createdAt: 'desc' },
-    select: {
-      createdAt:        true,
-      id:               true,
+      playerId:         true,
       amount:           true,
       pendingAmount:    true,
       settlementAmount: true,
       feeLauncx:        true,
       status:           true,
-      rrn:              true
+      createdAt:        true,
     }
   })
 
-  const wb = new ExcelJS.Workbook()
-  const ws = wb.addWorksheet('Transactions')
-  ws.columns = [
-    { header: 'Tanggal', key: 'date',            width: 20 },
-    { header: 'ID',      key: 'id',              width: 36 },
-    { header: 'RRN',     key: 'rrn',             width: 24 },  // ← **ADDED**: kolom header RRN
+  // (5) map ID→name untuk semua child
+  const idToName: Record<string,string> = {}
+  pc.children.forEach(c => { idToName[c.id] = c.name })
+  // (opsional, jika parent juga mau ditampilkan di All-sheet)
+  idToName[pc.id] = pc.name
 
-    { header: 'Jumlah',  key: 'amount',          width: 15 },
-    { header: 'Pending', key: 'pendingAmount',   width: 15 },
-    { header: 'Settled', key: 'settlementAmount',width: 15 },
-    { header: 'Fee',     key: 'feeLauncx',       width: 15 },
-    { header: 'Status',  key: 'status',          width: 16 },
-  ]
+  // (6) group per partnerClientId
+  const byClient: Record<string, typeof orders> = {}
   orders.forEach(o => {
-    ws.addRow({
-      date:             o.createdAt.toISOString(),
-      id:               o.id,
-      rrn:              o.rrn ?? '',  // ← **ADDED**: isi data RRN
-      amount:           o.amount,
-      pendingAmount:    o.pendingAmount ?? 0,
-      settlementAmount: o.settlementAmount ?? 0,
-      feeLauncx:        o.feeLauncx ?? 0,
-      status:           o.status
+    byClient[o.partnerClientId] ??= []
+    byClient[o.partnerClientId].push(o)
+  })
+
+  // (7) buat workbook + sheet “All Transactions”
+  const wb = new ExcelJS.Workbook()
+  const all = wb.addWorksheet('All Transactions')
+  all.columns = [
+    { header: 'Child Name', key: 'name',   width: 30 },
+    { header: 'Order ID',    key: 'id',     width: 36 },
+    { header: 'RRN',         key: 'rrn',    width: 24 },
+    { header: 'Player ID',   key: 'player', width: 20 },
+    { header: 'Amount',      key: 'amt',    width: 15 },
+    { header: 'Pending',     key: 'pend',   width: 15 },
+    { header: 'Settled',     key: 'sett',   width: 15 },
+    { header: 'Fee',         key: 'fee',    width: 15 },
+    { header: 'Status',      key: 'stat',   width: 16 },
+    { header: 'Date',        key: 'date',   width: 20 },
+  ]
+
+  orders.forEach(o => {
+    all.addRow({
+      name:   idToName[o.partnerClientId] || o.partnerClientId,
+      id:     o.id,
+      rrn:    o.rrn ?? '',
+      player: o.playerId,
+      amt:    o.amount,
+      pend:   o.pendingAmount ?? 0,
+      sett:   o.settlementAmount ?? 0,
+      fee:    o.feeLauncx ?? 0,
+      stat:   o.status,
+      date:   o.createdAt.toISOString(),
     })
   })
 
-  res.setHeader('Content-Disposition', 'attachment; filename=client-transactions.xlsx')
-  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  // (8) buat sheet per child
+  for (const child of pc.children) {
+    const sheet = wb.addWorksheet(child.name)
+    sheet.columns = all.columns.slice(1) // kecuali kolom “Child Name”
+    const list = byClient[child.id] || []
+    list.forEach(o => {
+      sheet.addRow({
+        id:     o.id,
+        rrn:    o.rrn ?? '',
+        player: o.playerId,
+        amt:    o.amount,
+        pend:   o.pendingAmount ?? 0,
+        sett:   o.settlementAmount ?? 0,
+        fee:    o.feeLauncx ?? 0,
+        stat:   o.status,
+        date:   o.createdAt.toISOString(),
+      })
+    })
+  }
+
+  // (9) kirim file
+  res.setHeader('Content-Disposition','attachment; filename=client-transactions.xlsx')
+  res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
   await wb.xlsx.write(res)
   res.end()
 }
-/**
- * POST /api/v1/client/dashboard/withdraw
- */
+
 const BANK_NAMES: Record<string, string> = {
   mandiri:         'Bank Mandiri',
   bri:             'Bank Rakyat Indonesia',
@@ -246,7 +329,6 @@ const BANK_NAMES: Record<string, string> = {
   standard_char:   'Standard Chartered Bank',
   // tambahkan kode lain jika perlu
 }
-
 /**
  * POST /api/v1/client/dashboard/withdraw/validate
  */

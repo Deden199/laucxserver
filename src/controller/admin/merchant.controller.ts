@@ -135,3 +135,153 @@ export const regenerateApiKey = async (_req: Request, res: Response) => {
   });
   res.json({ apiKey: client.apiKey, apiSecret: client.apiSecret });
 };
+// src/controller/admin/merchant.controller.ts
+
+export const getDashboardTransactions = async (req: Request, res: Response) => {
+  try {
+    const { date_from, date_to, merchantId } = req.query as {
+      date_from: string
+      date_to?: string
+      merchantId?: string
+    }
+
+    // parse tanggal
+    const dateFrom = new Date(date_from)
+    const dateTo   = date_to ? new Date(date_to) : undefined
+    const createdAt: any = {}
+    if (dateFrom) createdAt.gte = dateFrom
+    if (dateTo)   createdAt.lte = dateTo
+
+    // build where clause: hanya status sukses
+    const where: any = {
+      createdAt,
+      status: { in: ['SUCCESS', 'DONE', 'SETTLED','PENDING_SETTLEMENT'] },
+      ...(merchantId && merchantId !== 'all' ? { merchantId } : {})
+    }
+
+    const orders = await prisma.order.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        createdAt: true,
+        userId: true,
+        rrn: true,
+        amount: true,
+        feeLauncx: true,
+        fee3rdParty: true,
+        settlementAmount: true,
+        status: true,
+      }
+    })
+
+    const payload = orders.map(o => {
+      const feeL    = o.feeLauncx ?? 0
+      const feeP    = o.fee3rdParty ?? 0
+      const netSettle = (o.settlementAmount ?? 0) - feeL
+
+      return {
+        id:        o.id,
+        createdAt: o.createdAt,
+        buyerId:   o.userId,
+        reference: o.rrn,
+        amount:    o.amount ?? 0,
+        feeLauncx: feeL,
+        feePg:     feeP,
+        netProfit: feeL - feeP,
+        netSettle,
+        status:    o.status,
+      }
+    })
+
+    res.json(payload)
+  } catch (err: any) {
+    console.error('[getDashboardTransactions]', err)
+    res.status(500).json({ error: 'Failed to fetch dashboard transactions' })
+  }
+}
+
+/**
+ * 13. GET /merchant/dashboard/summary
+ *     Hitung balance Hilogate & active balance
+ */
+export const getDashboardSummary = async (req: Request, res: Response) => {
+  try {
+    const { date_from, date_to, merchantId } = req.query as {
+      date_from: string
+      date_to?: string
+      merchantId?: string
+    }
+
+    // parse tanggal & where clause seperti biasa…
+    const dateFrom = new Date(date_from)
+    const dateTo   = date_to ? new Date(date_to) : undefined
+    const createdAt: any = {}
+    if (dateFrom) createdAt.gte = dateFrom
+    if (dateTo)   createdAt.lte = dateTo
+
+    const baseWhere: any = {
+      createdAt,
+      ...(merchantId && merchantId!=='all' ? { merchantId } : {})
+    }
+
+    // total pending (gross)
+    const pendAgg = await prisma.order.aggregate({
+      _sum: { pendingAmount: true },
+      where: { ...baseWhere, status: 'PENDING_SETTLEMENT' }
+    })
+    const totalPending = pendAgg._sum.pendingAmount ?? 0
+
+    // total settled (net)
+    const settleAgg = await prisma.order.aggregate({
+      _sum: { settlementAmount: true },
+      where: { ...baseWhere, status: { in: ['SUCCESS','DONE','SETTLED'] } }
+    })
+    const totalSettled = settleAgg._sum.settlementAmount ?? 0
+
+    // total fee PG (sum fee3rdParty)
+    const feeAgg = await prisma.order.aggregate({
+      _sum: { fee3rdParty: true },
+      where: { ...baseWhere, status: { in: ['SUCCESS','DONE','SETTLED'] } }
+    })
+    const totalFeePg = feeAgg._sum.fee3rdParty ?? 0
+
+    // total netProfit (sum feeLauncx – fee3rdParty)
+    const profitAgg = await prisma.order.findMany({
+      where: { ...baseWhere, status: { in: ['SUCCESS','DONE','SETTLED'] } },
+      select: { feeLauncx: true, fee3rdParty: true }
+    })
+    const totalNetProfit = profitAgg
+      .reduce((sum, o) => sum + ((o.feeLauncx ?? 0) - (o.fee3rdParty ?? 0)), 0)
+
+    // count transaksi sukses
+    const totalTrans = await prisma.order.count({
+      where: { ...baseWhere, status: { in: ['SUCCESS','DONE','SETTLED'] } }
+    })
+
+    // hilogateBalance & activeBalance tetap seperti sebelumnya
+    const hilogateAgg = await prisma.order.aggregate({
+      _sum: { settlementAmount: true },
+      where: { ...baseWhere, status: { in: ['SUCCESS','DONE','SETTLED'] } }
+    })
+    const activeAgg = await prisma.order.aggregate({
+      _sum: { pendingAmount: true },
+      where: { ...baseWhere, status: 'PENDING_SETTLEMENT' }
+    })
+    const hilogateBalance = hilogateAgg._sum.settlementAmount ?? 0
+    const activeBalance   = activeAgg._sum.pendingAmount   ?? 0
+
+    return res.json({
+      hilogateBalance,
+      activeBalance,
+      totalPending,
+      totalSettled,
+      totalFeePg,
+      totalNetProfit,
+      totalTrans,
+    })
+  } catch (err: any) {
+    console.error('[getDashboardSummary]', err)
+    res.status(500).json({ error: 'Failed to fetch dashboard summary' })
+  }
+}

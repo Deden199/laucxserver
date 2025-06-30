@@ -4,9 +4,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import api from '@/lib/api'
 import { useRequireAuth } from '@/hooks/useAuth'
-import styles from './editClient.module.css'
 
-type Client = {
+interface Client {
   id: string
   name: string
   apiKey: string
@@ -14,21 +13,29 @@ type Client = {
   isActive: boolean
   feePercent: number
   feeFlat: number
+  parentClientId?: string
+  childrenIds?: string[]
 }
+
+type Option = { id: string; name: string }
 
 export default function EditClientPage() {
   useRequireAuth()
   const router = useRouter()
-  const { clientId } = router.query as { clientId: string }
+  const { clientId } = router.query as { clientId?: string }
 
-  const [client, setClient]           = useState<Client | null>(null)
-  const [name, setName]               = useState('')
-  const [isActive, setIsActive]       = useState(true)
-  const [feePercent, setFeePercent]   = useState<number>(0)
-  const [feeFlat, setFeeFlat]         = useState<number>(0)
-  const [loading, setLoading]         = useState(false)
-  const [error, setError]             = useState('')
+  const [client, setClient]               = useState<Client | null>(null)
+  const [options, setOptions]             = useState<Option[]>([])
+  const [name, setName]                   = useState('')
+  const [isActive, setIsActive]           = useState(true)
+  const [feePercent, setFeePercent]       = useState<number>(0)
+  const [feeFlat, setFeeFlat]             = useState<number>(0)
+  const [parentClientId, setParentClientId] = useState<string>('')
+  const [childrenIds, setChildrenIds]     = useState<string[]>([])
+  const [loading, setLoading]             = useState(false)
+  const [error, setError]                 = useState('')
 
+  // Load client data
   useEffect(() => {
     if (!clientId) return
     api.get<Client>(`/admin/clients/${clientId}`)
@@ -39,8 +46,18 @@ export default function EditClientPage() {
         setIsActive(c.isActive)
         setFeePercent(c.feePercent)
         setFeeFlat(c.feeFlat)
+        setParentClientId(c.parentClientId || '')
+        setChildrenIds(c.childrenIds || [])
       })
       .catch(() => setError('Gagal memuat data client'))
+  }, [clientId])
+
+  // Load all clients as options
+  useEffect(() => {
+    if (!clientId) return
+    api.get<Option[]>('/admin/clients')
+      .then(res => setOptions(res.data.filter(o => o.id !== clientId)))
+      .catch(() => {})
   }, [clientId])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -56,7 +73,9 @@ export default function EditClientPage() {
         name: name.trim(),
         isActive,
         feePercent,
-        feeFlat
+        feeFlat,
+        parentClientId: parentClientId || null,
+        childrenIds,
       })
       router.push('/admin/clients')
     } catch (e: any) {
@@ -66,43 +85,239 @@ export default function EditClientPage() {
     }
   }
 
-  if (!client) return <div className={styles.loading}>Loading...</div>
+  if (!clientId || !client) {
+    return <div className="loading">Loading...</div>
+  }
 
   return (
-    <div className={styles.container}>
-      <h1 className={styles.heading}>Edit Client</h1>
-      {error && <div className={styles.error}>{error}</div>}
-      <form onSubmit={handleSubmit} className={styles.form}>
-        <label>
-          Name
-          <input value={name} onChange={e => setName(e.target.value)} className={styles.input} />
-        </label>
-        <label>
-          Active
-          <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} className={styles.checkbox} />
-        </label>
-        <label>
-          Fee %
-          <input
-            type="number" step="0.1" min={0} max={100}
-            value={feePercent}
-            onChange={e => setFeePercent(parseFloat(e.target.value) || 0)}
-            className={styles.input}
-          />
-        </label>
-        <label>
-          Fee Flat
-          <input
-            type="number" step="0.01" min={0}
-            value={feeFlat}
-            onChange={e => setFeeFlat(parseFloat(e.target.value) || 0)}
-            className={styles.input}
-          />
-        </label>
-        <button type="submit" disabled={loading} className={styles.btnSave}>
-          {loading ? 'Menyimpan...' : 'Save Changes'}
-        </button>
-      </form>
+    <div className="container">
+      <div className="card">
+        <h1>Edit Client</h1>
+        {error && <div className="error-banner">{error}</div>}
+        <form onSubmit={handleSubmit} className="form-grid">
+
+          <div className="field">
+            <label>Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="Client Name"
+            />
+          </div>
+
+          <div className="field">
+            <label>Active</label>
+            <div className="toggle-switch">
+              <input
+                id="activeToggle"
+                type="checkbox"
+                checked={isActive}
+                onChange={e => setIsActive(e.target.checked)}
+              />
+              <label htmlFor="activeToggle"></label>
+            </div>
+          </div>
+
+          <div className="field">
+            <label>Fee %</label>
+            <input
+              type="number"
+              step={0.001}
+              min={0}
+              max={100}
+              value={feePercent}
+              onChange={e => setFeePercent(parseFloat(e.target.value) || 0)}
+              placeholder="0.000"
+            />
+          </div>
+
+          <div className="field">
+            <label>Fee Flat</label>
+            <input
+              type="number"
+              step={0.01}
+              min={0}
+              value={feeFlat}
+              onChange={e => setFeeFlat(parseFloat(e.target.value) || 0)}
+              placeholder="0.00"
+            />
+          </div>
+
+          <div className="field full-width">
+            <label>Parent Client</label>
+            <div className="select-wrapper">
+              <select
+                value={parentClientId}
+                onChange={e => setParentClientId(e.target.value)}
+              >
+                <option value="">None</option>
+                {options.map(o => (
+                  <option key={o.id} value={o.id}>{o.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="field full-width">
+            <label>Children</label>
+            <div className="chips-container">
+              {options.map(o => {
+                const selected = childrenIds.includes(o.id)
+                return (
+                  <button
+                    type="button"
+                    key={o.id}
+                    className={selected ? 'chip selected' : 'chip'}
+                    onClick={() => {
+                      if (selected) setChildrenIds(ids => ids.filter(i => i !== o.id))
+                      else setChildrenIds(ids => [...ids, o.id])
+                    }}
+                  >
+                    {o.name}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="full-width action">
+            <button type="submit" disabled={loading}>
+              {loading ? 'Menyimpan...' : 'Save Changes'}
+            </button>
+          </div>
+
+        </form>
+      </div>
+
+      <style jsx>{`
+        .container {
+          max-width: 800px;
+          margin: 2rem auto;
+          padding: 0 1rem;
+        }
+        .card {
+          background: #fff;
+          border-radius: 12px;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+          padding: 2rem;
+        }
+        h1 {
+          font-size: 1.75rem;
+          margin-bottom: 1rem;
+          font-weight: 600;
+        }
+        .error-banner {
+          background: #ffe0e0;
+          color: #900;
+          padding: 0.75rem;
+          border-radius: 6px;
+          margin-bottom: 1rem;
+        }
+        .form-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+          gap: 1.5rem;
+        }
+        .field {
+          display: flex;
+          flex-direction: column;
+        }
+        .field.full-width {
+          grid-column: 1 / -1;
+        }
+        label {
+          font-weight: 500;
+          margin-bottom: 0.5rem;
+        }
+        input[type="text"],
+        input[type="number"],
+        .select-wrapper select {
+          padding: 0.6rem 0.75rem;
+          border: 1px solid #ccc;
+          border-radius: 6px;
+          font-size: 1rem;
+          transition: border-color 0.2s;
+        }
+        input:focus, .select-wrapper select:focus {
+          outline: none;
+          border-color: #0070f3;
+        }
+        .toggle-switch {
+          position: relative;
+          width: 50px;
+          height: 24px;
+        }
+        .toggle-switch input {
+          opacity: 0;
+          width: 0;
+          height: 0;
+        }
+        .toggle-switch label {
+          position: absolute;
+          cursor: pointer;
+          background: #ccc;
+          border-radius: 12px;
+          width: 100%;
+          height: 100%;
+          transition: background 0.2s;
+        }
+        .toggle-switch label:after {
+          content: '';
+          position: absolute;
+          left: 4px;
+          top: 4px;
+          width: 16px;
+          height: 16px;
+          background: #fff;
+          border-radius: 50%;
+          transition: transform 0.2s;
+        }
+        .toggle-switch input:checked + label {
+          background: #0070f3;
+        }
+        .toggle-switch input:checked + label:after {
+          transform: translateX(26px);
+        }
+        .chips-container {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+        }
+        .chip {
+          padding: 0.4rem 0.75rem;
+          border: 1px solid #ccc;
+          border-radius: 16px;
+          background: #f5f5f5;
+          cursor: pointer;
+          transition: background 0.2s, border-color 0.2s;
+        }
+        .chip.selected {
+          background: #0070f3;
+          color: #fff;
+          border-color: #0070f3;
+        }
+        .action {
+          text-align: right;
+        }
+        .action button {
+          background: #0070f3;
+          color: #fff;
+          padding: 0.75rem 1.5rem;
+          border: none;
+          border-radius: 6px;
+          font-size: 1rem;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+        .action button:disabled {
+          background: #999;
+          cursor: not-allowed;
+        }
+        .action button:not(:disabled):hover {
+          background: #005bb5;
+        }
+      `}</style>
     </div>
   )
 }

@@ -7,6 +7,8 @@ import bcrypt from 'bcrypt'
 const prisma = new PrismaClient()
 
 // 1) List semua API-Clients
+// src/controllers/admin/client.controller.ts
+
 export const getAllClients = async (_: Request, res: Response) => {
   const clients = await prisma.partnerClient.findMany({
     select: {
@@ -17,7 +19,12 @@ export const getAllClients = async (_: Request, res: Response) => {
       isActive:   true,
       feePercent: true,
       feeFlat:    true,
-      createdAt:  true,
+      parentClient: {              // ← ambil relasi parent
+        select: { id: true, name: true }
+      },
+      children: {                  // ← ambil relasi children
+        select: { id: true, name: true }
+      }
     }
   })
   res.json(clients)
@@ -88,55 +95,83 @@ export const getClientById = async (req: Request, res: Response) => {
   const { clientId } = req.params
   const client = await prisma.partnerClient.findUnique({
     where: { id: clientId },
-    select: {
-      id:         true,
-      name:       true,
-      apiKey:     true,
-      apiSecret:  true,
-      isActive:   true,
-      feePercent: true,
-      feeFlat:    true,
-      createdAt:  true,
+    include: {
+      parentClient: { select: { id: true } },
+      children:     { select: { id: true } }
     }
   })
   if (!client) return res.status(404).json({ error: 'Client not found' })
-  res.json(client)
+
+  res.json({
+    id: client.id,
+    name: client.name,
+    apiKey: client.apiKey,
+    apiSecret: client.apiSecret,
+    isActive: client.isActive,
+    feePercent: client.feePercent,
+    feeFlat: client.feeFlat,
+    createdAt: client.createdAt,
+    parentClientId: client.parentClient?.id ?? null,
+    childrenIds: client.children.map(c => c.id)
+  })
 }
+
 
 // 4) Update API-Client by ID
 export const updateClient = async (req: Request, res: Response) => {
   const { clientId } = req.params
-  const name    = (req.body.name as string)?.trim()
-  const isActive = typeof req.body.isActive === 'boolean'
-    ? req.body.isActive
-    : undefined
-
-  // parse & validate fee if provided
-  const feePercent = req.body.feePercent != null
-    ? Number(req.body.feePercent)
-    : undefined
-  const feeFlat = req.body.feeFlat != null
-    ? Number(req.body.feeFlat)
-    : undefined
-
-  if (feePercent != null && (isNaN(feePercent) || feePercent < 0 || feePercent > 100)) {
-    return res.status(400).json({ error: 'feePercent must be between 0 and 100' })
-  }
-  if (feeFlat != null && (isNaN(feeFlat) || feeFlat < 0)) {
-    return res.status(400).json({ error: 'feeFlat must be >= 0' })
+  const {
+    name,
+    isActive,
+    feePercent,
+    feeFlat,
+    parentClientId = null,
+    childrenIds = []
+  } = req.body as {
+    name?: string
+    isActive?: boolean
+    feePercent?: number
+    feeFlat?: number
+    parentClientId?: string | null
+    childrenIds?: string[]
   }
 
+  // validasi sederhana
   const data: any = {}
-  if (name)        data.name       = name
-  if (isActive != null) data.isActive   = isActive
-  if (feePercent != null) data.feePercent = feePercent
-  if (feeFlat    != null) data.feeFlat    = feeFlat
+  if (name) data.name = name.trim()
+  if (typeof isActive === 'boolean') data.isActive = isActive
+  if (feePercent != null) {
+    const f = Number(feePercent)
+    if (isNaN(f) || f < 0 || f > 100)
+      return res.status(400).json({ error: 'feePercent must be between 0 and 100' })
+    data.feePercent = f
+  }
+  if (feeFlat != null) {
+    const f = Number(feeFlat)
+    if (isNaN(f) || f < 0)
+      return res.status(400).json({ error: 'feeFlat must be >= 0' })
+    data.feeFlat = f
+  }
+  data.parentClientId = parentClientId || null
 
-  const client = await prisma.partnerClient.update({
-    where: { id: clientId },
-    data
+  // 1) update utama
+  const updated = await prisma.partnerClient.update({ where: { id: clientId }, data })
+
+  // 2) lepas relasi parentClientId dari anak lama yang dikeluarkan
+  await prisma.partnerClient.updateMany({
+    where: { parentClientId: clientId, id: { notIn: childrenIds } },
+    data: { parentClientId: null }
   })
-  res.json(client)
+
+  // 3) pasang relasi parentClientId untuk anak yang dipilih
+  if (childrenIds.length) {
+    await prisma.partnerClient.updateMany({
+      where: { id: { in: childrenIds } },
+      data:  { parentClientId: clientId }
+    })
+  }
+
+  res.json(updated)
 }
 
 // 5) List semua PG-providers

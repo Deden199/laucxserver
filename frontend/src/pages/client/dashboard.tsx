@@ -25,34 +25,64 @@ type Tx = {
   settlementStatus?: string
 }
 
+type ClientOption = { id: string; name: string }
+
 export default function ClientDashboardPage() {
-  const [balance, setBalance] = useState(0)
-  const [totalPend, setTotalPend] = useState(0)
-  const [totalTrans, setTotalTrans] = useState(0)
-  const [txs, setTxs] = useState<Tx[]>([])
-  const [loadingSummary, setLoadingSummary] = useState(true)
-  const [loadingTx, setLoadingTx] = useState(true)
-  const [range, setRange] = useState<'today'|'week'|'custom'>('today')
-  const [from, setFrom] = useState(() => new Date().toISOString().slice(0,10))
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0,10))
-  const [search, setSearch] = useState('')
   const router = useRouter()
 
+  // Parent–Child
+  const [children, setChildren]               = useState<ClientOption[]>([])
+  const [selectedChild, setSelectedChild]     = useState<'all' | string>('all')
+
+  // Summary
+  const [balance, setBalance]                 = useState(0)
+  const [totalPend, setTotalPend]             = useState(0)
+
+  // Transactions
+  const [txs, setTxs]                         = useState<Tx[]>([])
+  const [totalTrans, setTotalTrans]           = useState(0)
+
+  const [loadingSummary, setLoadingSummary]   = useState(true)
+  const [loadingTx, setLoadingTx]             = useState(true)
+
+  // Date filter
+  const [range, setRange]                     = useState<'today'|'week'|'custom'>('today')
+  const [from, setFrom]                       = useState(() => new Date().toISOString().slice(0,10))
+  const [to, setTo]                           = useState(() => new Date().toISOString().slice(0,10))
+
+  // Search
+  const [search, setSearch]                   = useState('')
+
   const buildParams = () => {
-    if (range === 'today') return { date_from: new Date().toISOString().slice(0,10) }
-    if (range === 'week') {
+    const params: any = {}
+    if (range === 'today') {
+      params.date_from = new Date().toISOString().slice(0,10)
+    } else if (range === 'week') {
       const d = new Date(); d.setDate(d.getDate() - 6)
-      return { date_from: d.toISOString().slice(0,10) }
+      params.date_from = d.toISOString().slice(0,10)
+    } else {
+      params.date_from = from
+      params.date_to   = to
     }
-    return { date_from: from, date_to: to }
+    if (selectedChild !== 'all') {
+      params.clientId = selectedChild
+    }
+    return params
   }
 
+  // Fetch summary (with children) in one call
   const fetchSummary = async () => {
     setLoadingSummary(true)
     try {
-      const { data } = await api.get<{ balance: number; totalPending: number }>('/client/dashboard')
+      const { data } = await api.get<{
+        balance: number
+        totalPending: number
+        children: ClientOption[]
+      }>('/client/dashboard', { params: buildParams() })
+
       setBalance(data.balance)
       setTotalPend(data.totalPending)
+      setChildren(data.children)
     } catch {
       router.push('/client/login')
     } finally {
@@ -60,10 +90,14 @@ export default function ClientDashboardPage() {
     }
   }
 
+  // Fetch transactions
   const fetchTransactions = async () => {
     setLoadingTx(true)
     try {
-      const { data } = await api.get<{ transactions: Tx[] }>('/client/dashboard', { params: buildParams() })
+      const { data } = await api.get<{ transactions: Tx[] }>(
+        '/client/dashboard',
+        { params: buildParams() }
+      )
       setTxs(data.transactions)
       setTotalTrans(data.transactions.length)
     } catch {
@@ -73,30 +107,39 @@ export default function ClientDashboardPage() {
     }
   }
 
+  // Export Excel
   const handleExport = async () => {
     const token = localStorage.getItem('clientToken')
     if (!token) return router.push('/client/login')
     try {
       const resp = await api.get('/client/dashboard/export', {
-        params: buildParams(), responseType: 'blob'
+        params: buildParams(),
+        responseType: 'blob'
       })
       const blob = new Blob([resp.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
       const url = URL.createObjectURL(blob)
-      const a = document.createElement('a'); a.href = url; a.download = 'client-transactions.xlsx'
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'client-transactions.xlsx'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
     } catch {
       alert('Gagal export data')
     }
   }
 
+  // Copy helper
   const copyText = (txt: string) => {
     navigator.clipboard.writeText(txt)
       .then(() => alert('Disalin!'))
       .catch(() => alert('Gagal menyalin'))
   }
 
-  useEffect(() => { fetchSummary() }, [])
-  useEffect(() => { fetchTransactions() }, [range])
+  // Trigger fetches when filters change
+  useEffect(() => { fetchSummary() }, [range, selectedChild, from, to])
+  useEffect(() => { fetchTransactions() }, [range, selectedChild, from, to])
 
   const filtered = txs.filter(t =>
     t.id.toLowerCase().includes(search.toLowerCase()) ||
@@ -108,6 +151,22 @@ export default function ClientDashboardPage() {
 
   return (
     <div className={styles.container}>
+      {/* Dropdown Child */}
+      {children.length > 0 && (
+        <div className={styles.childSelector}>
+          <label>Pilih Child:&nbsp;</label>
+          <select
+            value={selectedChild}
+            onChange={e => setSelectedChild(e.target.value as any)}
+          >
+            <option value="all">Semua Child</option>
+            {children.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <aside className={styles.sidebar}>
         <section className={styles.statsGrid}>
           <div className={`${styles.card} ${styles.activeBalance}`}>
@@ -124,6 +183,7 @@ export default function ClientDashboardPage() {
           </div>
         </section>
       </aside>
+
       <main className={styles.content}>
         <section className={styles.filters}>
           <div className={styles.rangeControls}>
@@ -151,6 +211,7 @@ export default function ClientDashboardPage() {
             onChange={e => setSearch(e.target.value)}
           />
         </section>
+
         <section className={styles.tableSection}>
           <h2>Daftar Transaksi &amp; Settlement</h2>
           {loadingTx ? (
@@ -162,11 +223,8 @@ export default function ClientDashboardPage() {
                   <tr>
                     <th>Date</th>
                     <th>TRX ID</th>
-                   <th>
-                     <div className={styles.rrnCell}>
-                       <span className={styles.rrnHeader}>RRN</span>
-                     </div>
-                   </th>                    <th>Player ID</th>
+                    <th>RRN</th>
+                    <th>Player ID</th>
                     <th>Amount</th>
                     <th>Fee</th>
                     <th>Net Amount</th>

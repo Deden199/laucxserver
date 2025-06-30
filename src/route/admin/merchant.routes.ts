@@ -1,3 +1,4 @@
+// src/routes/admin/merchant.routes.ts
 import { Router, Request, Response, NextFunction } from 'express'
 import * as ctrl from '../../controller/admin/merchant.controller'
 import { authMiddleware, AuthRequest } from '../../middleware/auth'
@@ -13,23 +14,25 @@ router.use(authMiddleware, (req: Request, res: Response, next: NextFunction) => 
   next()
 })
 
-// Regenerate API Key
+// Regenerate API Key untuk partner clients
 router.post('/api-key', ctrl.regenerateApiKey)
 
 // Merchant CRUD
-router.post('/',        ctrl.createMerchant)
-router.get('/',         ctrl.getAllMerchants)
+router.post('/',    ctrl.createMerchant)
+router.get('/',     ctrl.getAllMerchants)
+router.get('/:id',  ctrl.getMerchantById)
+router.patch('/:id',      ctrl.updateMerchant)
+router.patch('/:id/fee',  ctrl.setFeeRate)
+router.delete('/:id',     ctrl.deleteMerchant)
 
-// Manage PG connections
+// Manage PG connections (sub-merchant)
 router.get('/:id/pg',           ctrl.listPGs)
 router.post('/:id/pg',          ctrl.connectPG)
 router.patch('/:id/pg/:subId',  ctrl.updatePGFee)
 router.delete('/:id/pg/:subId', ctrl.disconnectPG)
 
-// Single merchant operations
-router.get('/:id',        ctrl.getMerchantById)
-router.patch('/:id',      ctrl.updateMerchant)
-router.patch('/:id/fee',  ctrl.setFeeRate)
-router.delete('/:id',     ctrl.deleteMerchant)
+// Admin Dashboard: transaksi & summary
+router.get('/dashboard/transactions', ctrl.getDashboardTransactions)
+router.get('/dashboard/summary',      ctrl.getDashboardSummary)
 
 export default router

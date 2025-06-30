@@ -60,9 +60,7 @@ export const createTransaction = async (
   // ─── Hilogate branch ───────────────────────────────────
   if (mName === 'hilogate') {
     // 1) Cari internal merchant Hilogate
-    const merchantRec = await prisma.merchant.findFirst({
-      where: { name: 'hilogate' }
-    });
+    const merchantRec = await prisma.merchant.findFirst({ where: { name: 'hilogate' } });
     if (!merchantRec) {
       throw new Error('Internal Hilogate merchant not found');
     }
@@ -70,13 +68,13 @@ export const createTransaction = async (
     // 2) Simpan transaction_request
     const trx = await prisma.transaction_request.create({
       data: {
-        merchantId:    merchantRec.id,
+        merchantId: merchantRec.id,
         subMerchantId: '',
-    buyerId:       request.buyer, // partner-client
-    playerId:      pid,           // username gamer        
-    amount,                   // original amount
-    status:        'PENDING',
-        settlementAmount: amount, // sementara sama dengan amount
+        buyerId: request.buyer,
+        playerId: pid,
+        amount,
+        status: 'PENDING',
+        settlementAmount: amount,
       },
     });
     const refId = trx.id;
@@ -85,7 +83,7 @@ export const createTransaction = async (
     const apiResp = await HilogateClient.createTransaction({
       ref_id: refId,
       method: 'qris',
-      amount,                   // tetap kirim jumlah original
+      amount,
     });
     const outer = apiResp.data;
     const qrString = outer.data.qr_string;
@@ -93,9 +91,9 @@ export const createTransaction = async (
     // 4) Simpan audit log
     await prisma.transaction_response.create({
       data: {
-        referenceId:  refId,
+        referenceId: refId,
         responseBody: apiResp,
-        playerId:     pid,
+        playerId: pid,
       },
     });
 
@@ -104,49 +102,45 @@ export const createTransaction = async (
     const checkoutUrl = `${host}/order/${refId}`;
 
     // 6) Hitung fee Launcx & settlementAmount
-    //    pakai request.buyer sebagai partnerClient.id
-    const pc = await prisma.partnerClient.findUnique({
-      where: { id: request.buyer }
-    });
+    const pc = await prisma.partnerClient.findUnique({ where: { id: request.buyer } });
     if (!pc) {
-      console.warn(
-        `PartnerClient ${request.buyer} not found, fee set to 0`
-      );
+      console.warn(`PartnerClient ${request.buyer} not found, fee set to 0`);
     }
     const feeLauncx = pc
       ? Math.round(amount * (pc.feePercent / 100) + pc.feeFlat)
       : 0;
-    // settlementAmt = amount original – feeLauncx
     const settlementAmt = amount - feeLauncx;
 
     // 7) Simpan ke tabel order untuk dashboard client
     await prisma.order.create({
       data: {
-        id:               refId,
-        userId:           request.buyer,
-        merchantId:       request.buyer,
-        playerId:         pid,
-        amount,                    // original input amount
-        channel:          'hilogate',
-        status:           'PENDING',
-        qrPayload:        qrString,
+        id: refId,
+        userId: request.buyer,
+        merchantId: request.buyer,
+        // connect relation to PartnerClient
+        partnerClient: { connect: { id: request.buyer } },
+        playerId: pid,
+        amount,
+        channel: 'hilogate',
+        status: 'PENDING',
+        qrPayload: qrString,
         checkoutUrl,
-        feeLauncx,                 // Launcx fee
-        fee3rdParty:      0,
-        settlementAmount: settlementAmt, // setelah dipotong Launcx fee
+        feeLauncx,
+        fee3rdParty: 0,
+        settlementAmount: settlementAmt,
       },
     });
 
     // 8) Return response ke client
     return {
-      orderId:     refId,
+      orderId: refId,
       checkoutUrl,
-      qrPayload:   qrString,
-      playerId:    pid,
-      totalAmount: amount,      // original input
-      // expiredTs: outer.expires_at, // tambahkan jika perlu
+      qrPayload: qrString,
+      playerId: pid,
+      totalAmount: amount,
     };
   }
+
 
 
 
