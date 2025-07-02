@@ -1,6 +1,7 @@
 // src/routes/admin/merchant.routes.ts
 import { Router, Request, Response, NextFunction } from 'express'
 import * as ctrl from '../../controller/admin/merchant.controller'
+import * as exportCtrl from '../../controller/admin/merchant.controller'
 import { authMiddleware, AuthRequest } from '../../middleware/auth'
 
 const router = Router()
@@ -31,9 +32,11 @@ router.post('/:id/pg',          ctrl.connectPG)
 router.patch('/:id/pg/:subId',  ctrl.updatePGFee)
 router.delete('/:id/pg/:subId', ctrl.disconnectPG)
 
-// Admin Dashboard: transaksi & summary
+// Admin Dashboard: transaksi, summary, profit, withdrawals, export
 router.get('/dashboard/transactions', ctrl.getDashboardTransactions)
 router.get('/dashboard/summary',      ctrl.getDashboardSummary)
-router.get('/dashboard/profit',      ctrl.getPlatformProfit)
+router.get('/dashboard/profit',       ctrl.getPlatformProfit)
+router.get('/dashboard/withdrawals',  ctrl.getDashboardWithdrawals)
+router.get('/dashboard/export-all',   exportCtrl.exportDashboardAll)
 
 export default router

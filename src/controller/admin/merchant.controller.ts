@@ -4,10 +4,16 @@ import { v4 as uuid } from 'uuid';
 import crypto from 'crypto'
 import axios from 'axios'
 import HilogateClient from '../../service/hilogateClient'
+import ExcelJS from 'exceljs'
+import OyClient          from '../../service/oyClient'    // sesuaikan path
 
 
 const prisma = new PrismaClient();
-
+const oyClient = new OyClient({
+  baseURL:   process.env.OY_BASE_URL!,
+  username:  process.env.OY_USERNAME!,
+  apiKey:    process.env.OY_API_KEY!
+})
 // 1. Create merchant (mdr wajib)
 export const createMerchant = async (req: Request, res: Response) => {
   const { name, phoneNumber, email, telegram, mdr } = req.body;
@@ -26,9 +32,11 @@ export const createMerchant = async (req: Request, res: Response) => {
   res.status(201).json(merchant);
 };
 
-// 2. List semua merchant
 export const getAllMerchants = async (_req: Request, res: Response) => {
-  const list = await prisma.merchant.findMany();
+ // sekarang ambil list partnerClient (id & name saja)
+ const list = await prisma.partnerClient.findMany({
+    select: { id: true, name: true }
+  });
   res.json(list);
 };
 
@@ -142,7 +150,8 @@ export const regenerateApiKey = async (_req: Request, res: Response) => {
 export async function getDashboardTransactions(req: Request, res: Response) {
   try {
     // (1) parse tanggal & merchant filter
-    const { date_from, date_to, merchantId } = req.query as any
+    
+    const { date_from, date_to, partnerClientId } = req.query as any
     const dateFrom = date_from ? new Date(String(date_from)) : undefined
     const dateTo   = date_to   ? new Date(String(date_to))   : undefined
     const createdAtFilter: any = {}
@@ -154,8 +163,8 @@ export async function getDashboardTransactions(req: Request, res: Response) {
       status: { in: ['SUCCESS', 'DONE', 'SETTLED', 'PENDING_SETTLEMENT'] },
       ...(dateFrom || dateTo ? { createdAt: createdAtFilter } : {}),
     }
-    if (merchantId && merchantId !== 'all') {
-      whereOrders.merchantId = merchantId
+    if (partnerClientId && partnerClientId !== 'all') {
+      whereOrders.partnerClientId = partnerClientId
     }
 
     // (3) total pending (net sudah di pendingAmount)
@@ -172,15 +181,17 @@ export async function getDashboardTransactions(req: Request, res: Response) {
     })
     const ordersActiveBalance = settleAgg._sum.settlementAmount ?? 0
 
-    // (5) total merchant balance dari partnerClient.balance
-    const pcWhere: any = {}
-    if (merchantId && merchantId !== 'all') pcWhere.id = merchantId
-    const merchants = await prisma.partnerClient.findMany({
-      where: pcWhere,
-      select: { balance: true }
-    })
-    const totalMerchantBalance = merchants
-      .reduce((sum, m) => sum + m.balance, 0)
+// (5) total balance dari partnerClient.balance
+const pcWhere: any = {}
+if (partnerClientId && partnerClientId !== 'all') {
+  pcWhere.id = partnerClientId
+}
+const partnerClients = await prisma.partnerClient.findMany({
+  where: pcWhere,
+  select: { balance: true }
+})
+const totalMerchantBalance = partnerClients
+  .reduce((sum, pc) => sum + pc.balance, 0)
 
     // (6) ambil detail orders
     const orders = await prisma.order.findMany({
@@ -198,6 +209,8 @@ export async function getDashboardTransactions(req: Request, res: Response) {
         pendingAmount:    true,  // net untuk PENDING_SETTLEMENT
         settlementAmount: true,  // net untuk settled
         status:           true,  // PENDING_SETTLEMENT | SETTLED | etc.
+        channel: true,    // ← pastikan ini ada
+
       }
     })
 
@@ -220,7 +233,9 @@ export async function getDashboardTransactions(req: Request, res: Response) {
         feePg:            o.fee3rdParty ?? 0,
         netSettle,                            // langsung net
         status:           o.status === 'DONE' ? 'DONE' : 'SUCCESS',
-        settlementStatus: o.status              // raw DB flag
+        settlementStatus: o.status ,             // raw DB flag
+        channel:          o.channel ?? ''     // ← tambahkan ini
+
       }
     })
 
@@ -238,6 +253,56 @@ export async function getDashboardTransactions(req: Request, res: Response) {
 }
 
 
+export async function getDashboardWithdrawals(req: Request, res: Response) {
+  try {
+    // (1) Parse filter tanggal & partnerClientId
+    const { date_from, date_to, partnerClientId } = req.query as any;
+    const dateFrom = date_from ? new Date(String(date_from)) : undefined;
+    const dateTo   = date_to   ? new Date(String(date_to))   : undefined;
+    const createdAtFilter: any = {};
+    if (dateFrom && !isNaN(dateFrom.getTime())) createdAtFilter.gte = dateFrom;
+    if (dateTo   && !isNaN(dateTo.getTime()))   createdAtFilter.lte = dateTo;
+
+    // (2) Build where untuk withdrawRequest
+    const where: any = {};
+    if (partnerClientId && partnerClientId !== 'all') {
+      where.partnerClientId = partnerClientId;
+    }
+    if (dateFrom || dateTo) {
+      where.createdAt = createdAtFilter;
+    }
+ 
+    // (3) Ambil data dari DB
+    const rows = await prisma.withdrawRequest.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        refId: true,
+        bankName: true,
+        accountNumber: true,
+        amount: true,
+        status: true,
+        createdAt: true
+      },
+    });
+
+    // (4) Format & kirim
+    const data = rows.map(w => ({
+      id:            w.id,
+      refId:         w.refId,
+      bankName:      w.bankName,
+      accountNumber: w.accountNumber,
+      amount:        w.amount,
+      status:        w.status,
+      createdAt:     w.createdAt.toISOString(),
+    }));
+    return res.json({ data });
+  } catch (err: any) {
+    console.error('[getDashboardWithdrawals]', err);
+    return res.status(500).json({ error: 'Failed to fetch withdrawals' });
+  }
+}
 
 export const getDashboardSummary = async (_req, res) => {
   try {
@@ -249,16 +314,103 @@ export const getDashboardSummary = async (_req, res) => {
       total_withdrawal,
       pending_withdrawal
     } = result.data
-
+  let oyBalance = 0
+  try {
+    const oyResp = await oyClient.getBalance()
+    // asumsi response shape { status:…, balance: number } atau { data: { balance:… } }
+    oyBalance = oyResp.balance ?? (oyResp.data?.balance) ?? 0
+  } catch (err) {
+    console.error('[OY] getBalance error', err)
+  }
     return res.json({
       hilogateBalance,
       activeBalance,
       total_withdrawal,
-      pending_withdrawal
+      pending_withdrawal,
+      oyBalance           // ← baru
+
     })
   } catch (err) {
     console.error('[getDashboardSummary]', err)
     return res.status(500).json({ error: 'Failed to fetch Hilogate balance' })
+  }
+}
+export async function exportDashboardAll(req: Request, res: Response) {
+  try {
+    const { date_from, date_to, partnerClientId } = req.query as any
+    const dateFrom = date_from ? new Date(String(date_from)) : undefined
+    const dateTo   = date_to   ? new Date(String(date_to))   : undefined
+    const createdAtFilter: any = {}
+    if (dateFrom) createdAtFilter.gte = dateFrom
+    if (dateTo)   createdAtFilter.lte = dateTo
+
+    // Build order filter
+    const whereOrders: any = {
+      status: { in: ['SUCCESS','DONE','SETTLED','PENDING_SETTLEMENT'] },
+      ...(dateFrom||dateTo ? { createdAt: createdAtFilter } : {})
+    }
+    if (partnerClientId && partnerClientId !== 'all') {
+      whereOrders.partnerClientId = partnerClientId
+    }
+
+    // Fetch orders
+    const orders = await prisma.order.findMany({
+      where: whereOrders,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        createdAt: true, id: true, rrn: true, playerId: true, channel: true,
+        amount: true, feeLauncx: true, fee3rdParty: true,
+        pendingAmount: true, settlementAmount: true, status: true
+      }
+    })
+
+    // Build withdrawal filter
+    const whereWD: any = {}
+    if (partnerClientId && partnerClientId !== 'all') {
+      whereWD.partnerClientId = partnerClientId
+    }
+    if (dateFrom||dateTo) {
+      whereWD.createdAt = createdAtFilter
+    }
+
+    // Fetch withdrawals
+    const withdrawals = await prisma.withdrawRequest.findMany({
+      where: whereWD,
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true, refId: true, bankName: true, accountNumber: true, amount: true, status: true }
+    })
+
+    // Prepare workbook
+    const wb = new ExcelJS.Workbook()
+    // Sheet 1: Transactions
+    const txSheet = wb.addWorksheet('Transactions')
+    txSheet.addRow(['Date','TRX ID','RRN','Player ID','Channel','Amount','Fee Launcx','Fee PG','Net Amount','Status'])
+    orders.forEach(o => {
+      const net = o.status === 'PENDING_SETTLEMENT' ? o.pendingAmount : o.settlementAmount
+      txSheet.addRow([
+        o.createdAt.toISOString(), o.id, o.rrn, o.playerId, o.channel,
+        o.amount, o.feeLauncx, o.fee3rdParty, net, o.status
+      ])
+    })
+
+    // Sheet 2: Withdrawals
+    const wdSheet = wb.addWorksheet('Withdrawals')
+    wdSheet.addRow(['Date','Ref ID','Bank','Account','Amount','Status'])
+    withdrawals.forEach(w => {
+      wdSheet.addRow([
+        w.createdAt.toISOString(), w.refId, w.bankName, w.accountNumber, w.amount, w.status
+      ])
+    })
+
+    // Response headers
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    res.setHeader('Content-Disposition', 'attachment; filename="dashboard-all.xlsx"')
+
+    await wb.xlsx.write(res)
+    res.end()
+  } catch (err: any) {
+    console.error('[exportDashboardAll]', err)
+    res.status(500).json({ error: 'Failed to export data' })
   }
 }
 

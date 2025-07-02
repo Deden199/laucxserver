@@ -95,6 +95,29 @@ private async request(
   }
 }
 
+private async requestFull(
+    method: 'get' | 'post' | 'patch',
+    path: string,
+    body: any = null
+  ): Promise<any> {
+    const signature = this.sign(path, body);
+    const headers = { 'X-Signature': signature };
+
+    if (method === 'get') {
+      const res = await this.axiosInst.get(path, { headers });
+      return res.data;
+    } else {
+      const res = await this.axiosInst.request({
+        method,
+        url: path,
+        headers,
+        data: body
+      });
+      // 🔥 Bypass dan kembalikan seluruh body (status + data)
+      return res.data;
+    }
+  }
+
 
   /** Buat transaksi QRIS */
   public async createTransaction(opts: {
@@ -102,7 +125,7 @@ private async request(
     amount: number;
     method?: string;
   }): Promise<any> {
-    return this.request(
+    return this.requestFull(
       'post',
       '/api/v1/transactions',
       { ref_id: opts.ref_id, amount: opts.amount, method: opts.method || 'qris' }
@@ -111,7 +134,7 @@ private async request(
 
   /** Ambil status transaksi dari Hilogate */
   public async getTransaction(ref_id: string): Promise<any> {
-    return this.request('get', `/api/v1/transactions/${ref_id}`);
+    return this.requestFull('get', `/api/v1/transactions/${ref_id}`);
   }
 
 public async createWithdrawal(payload: {

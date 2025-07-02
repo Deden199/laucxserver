@@ -19,6 +19,7 @@ export const getAllClients = async (_: Request, res: Response) => {
       isActive:   true,
       feePercent: true,
       feeFlat:    true,
+      defaultProvider:true,          // ← include defaultProvider
       parentClient: {              // ← ambil relasi parent
         select: { id: true, name: true }
       },
@@ -65,6 +66,8 @@ export const createClient = async (req: Request, res: Response) => {
       isActive:   true,
       feePercent,
       feeFlat,
+      defaultProvider: 'hilogate',   // ← set defaultProvider fallback
+
     }
   })
 
@@ -110,6 +113,7 @@ export const getClientById = async (req: Request, res: Response) => {
     isActive: client.isActive,
     feePercent: client.feePercent,
     feeFlat: client.feeFlat,
+    defaultProvider:  client.defaultProvider,  // ← include defaultProvider
     createdAt: client.createdAt,
     parentClientId: client.parentClient?.id ?? null,
     childrenIds: client.children.map(c => c.id)
@@ -125,6 +129,7 @@ export const updateClient = async (req: Request, res: Response) => {
     isActive,
     feePercent,
     feeFlat,
+    defaultProvider,        // ← include in body
     parentClientId = null,
     childrenIds = []
   } = req.body as {
@@ -132,6 +137,7 @@ export const updateClient = async (req: Request, res: Response) => {
     isActive?: boolean
     feePercent?: number
     feeFlat?: number
+    defaultProvider?: string       // ← add this line
     parentClientId?: string | null
     childrenIds?: string[]
   }
@@ -153,7 +159,15 @@ export const updateClient = async (req: Request, res: Response) => {
     data.feeFlat = f
   }
   data.parentClientId = parentClientId || null
-
+if (defaultProvider != null) {
+  const dp = String(defaultProvider).trim().toLowerCase()
+  // validasi: hanya izinkan nama provider yang tersedia
+  const allowed = ['hilogate', 'oy', 'gv']  // atau daftar dinamis dari PG
+  if (!allowed.includes(dp)) {
+    return res.status(400).json({ error: `defaultProvider must be one of ${allowed.join(', ')}` })
+  }
+  data.defaultProvider = dp
+}
   // 1) update utama
   const updated = await prisma.partnerClient.update({ where: { id: clientId }, data })
 
@@ -182,48 +196,48 @@ export const listProviders = async (_: Request, res: Response) => {
   res.json(providers)
 }
 
-// 6) List koneksi PG untuk satu client
-export const listClientPG = async (req: Request, res: Response) => {
-  const { clientId } = req.params
-  const conns = await prisma.clientPG.findMany({
-    where: { clientId },
-    select: { id: true, clientId: true, pgProviderId: true, clientFee: true, activeDays: true }
-  })
-  res.json(conns)
-}
+// // 6) List koneksi PG untuk satu client
+// export const listClientPG = async (req: Request, res: Response) => {
+//   const { clientId } = req.params
+//   const conns = await prisma.clientPG.findMany({
+//     where: { clientId },
+//     select: { id: true, clientId: true, pgProviderId: true, clientFee: true, activeDays: true }
+//   })
+//   res.json(conns)
+// }
 
-// 7) Upsert koneksi PG (create or update)
-export const createClientPG = async (req: Request, res: Response) => {
-  const { clientId } = req.params
-  const { pgProviderId, clientFee, activeDays } = req.body
-  if (!pgProviderId || clientFee == null || !Array.isArray(activeDays)) {
-    return res.status(400).json({ error: 'pgProviderId, clientFee & activeDays are required' })
-  }
-  const item = await prisma.clientPG.upsert({
-    where: { clientId_pgProviderId: { clientId, pgProviderId } },
-    update: { clientFee, activeDays },
-    create: { clientId, pgProviderId, clientFee, activeDays }
-  })
-  res.json(item)
-}
+// // 7) Upsert koneksi PG (create or update)
+// export const createClientPG = async (req: Request, res: Response) => {
+//   const { clientId } = req.params
+//   const { pgProviderId, clientFee, activeDays } = req.body
+//   if (!pgProviderId || clientFee == null || !Array.isArray(activeDays)) {
+//     return res.status(400).json({ error: 'pgProviderId, clientFee & activeDays are required' })
+//   }
+//   const item = await prisma.clientPG.upsert({
+//     where: { clientId_pgProviderId: { clientId, pgProviderId } },
+//     update: { clientFee, activeDays },
+//     create: { clientId, pgProviderId, clientFee, activeDays }
+//   })
+//   res.json(item)
+// }
 
-// 8) Update koneksi PG by ID
-export const updateClientPG = async (req: Request, res: Response) => {
-  const { id } = req.params
-  const { clientFee, activeDays } = req.body
-  if (clientFee == null || !Array.isArray(activeDays)) {
-    return res.status(400).json({ error: 'clientFee & activeDays are required' })
-  }
-  const item = await prisma.clientPG.update({
-    where: { id },
-    data: { clientFee, activeDays }
-  })
-  res.json(item)
-}
+// // 8) Update koneksi PG by ID
+// export const updateClientPG = async (req: Request, res: Response) => {
+//   const { id } = req.params
+//   const { clientFee, activeDays } = req.body
+//   if (clientFee == null || !Array.isArray(activeDays)) {
+//     return res.status(400).json({ error: 'clientFee & activeDays are required' })
+//   }
+//   const item = await prisma.clientPG.update({
+//     where: { id },
+//     data: { clientFee, activeDays }
+//   })
+//   res.json(item)
+// }
 
-// 9) Delete koneksi PG
-export const deleteClientPG = async (_: Request, res: Response) => {
-  const { id } = res.locals.params as any
-  await prisma.clientPG.delete({ where: { id } })
-  res.status(204).end()
-}
+// // 9) Delete koneksi PG
+// export const deleteClientPG = async (_: Request, res: Response) => {
+//   const { id } = res.locals.params as any
+//   await prisma.clientPG.delete({ where: { id } })
+//   res.status(204).end()
+// }

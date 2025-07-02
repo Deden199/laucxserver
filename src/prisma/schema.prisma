@@ -161,12 +161,10 @@ model PartnerClient {
   allowedDomains   String[]
 
   orders           Order[]          @relation("PartnerClientOrders")
-
+  defaultProvider  String?          @default("hilogate")
   parentClientId   String?          @map("parentClientId")
   parentClient     PartnerClient?   @relation("ParentChildren", fields: [parentClientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   children         PartnerClient[]  @relation("ParentChildren")
-
-  clientPG         ClientPG[]       @relation("ClientToPG")
   users            ClientUser[]
   withdraws        WithdrawRequest[]
 }
@@ -222,7 +220,6 @@ model PGProvider {
   id          String     @id @default(uuid()) @map("_id")
   name        String     @unique
   credentials Json
-  clientPG    ClientPG[] @relation("ClientToPG")
 }
 
 model ClientUser {
@@ -257,16 +254,4 @@ model WithdrawRequest {
   partnerClient PartnerClient @relation(fields: [partnerClientId], references: [id])
 }
 
-/// Junction table: satu API‐client bisa connect ke banyak PG,
-/// dengan fee khusus dan hari‐hari aktif
-model ClientPG {
-  id           String        @id @default(uuid()) @map("_id")
-  client       PartnerClient @relation("ClientToPG", fields: [clientId], references: [id])
-  clientId     String        @map("clientId")
-  pgProvider   PGProvider    @relation("ClientToPG", fields: [pgProviderId], references: [id])
-  pgProviderId String        @map("pgProviderId")
-  clientFee    Float
-  activeDays   String[]      @default([]) // e.g. ["MONDAY","TUESDAY"]
 
-  @@unique([clientId, pgProviderId])
-}

@@ -3,6 +3,8 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
 import cron from 'node-cron';
+import { errorHandler } from './middleware/errorHandler'
+
 import { scheduleSettlementChecker } from './cron/settlement'
 import subMerchantRoutes from './route/admin/subMerchant.routes';
 import pgProviderRoutes from './route/admin/pgProvider.routes';
@@ -16,9 +18,11 @@ import ewalletRoutes from './route/ewallet.routes';
 import authRoutes from './route/auth.routes';
 import paymentRouter from './route/payment.routes';
 import bankRoutes from './route/bank.routes'
+import { proxyOyQris } from './controller/qr.controller'
 
 // import disbursementRouter from './route/disbursement.routes';
 import paymentController, { transactionCallback } from './controller/payment';
+import { oyTransactionCallback } from './controller/payment'
 
 import merchantDashRoutes from './route/merchant/dashboard.routes';
 import clientWebRoutes from './route/client/web.routes';    // partner-client routes
@@ -66,8 +70,12 @@ app.post(
   }),
   withdrawalCallback           // ⛔ TANPA express.json()
 );
-
+app.post(
+  '/api/v1/transaction/callback/oy',
+  oyTransactionCallback
+)
 // Raw parser for Hilogate withdrawal webhook
+app.get('/api/v1/qris/:orderId', proxyOyQris)
 
 
 // Global middleware
@@ -118,6 +126,8 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 /* ========== 6. SCHEDULED TASKS ========== */
 scheduleSettlementChecker()
 // Start server
+app.use(errorHandler)
+
 app.listen(config.api.port, () => {
 
 });

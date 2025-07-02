@@ -291,4 +291,46 @@
   .table td {
     padding: .75rem 1rem;
   }
+  .balanceSelector {
+  margin: 1rem 0;
+  display: flex;
+  align-items: center;
+}
+
+.balanceSelector label {
+  margin-right: 0.75rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #333;
+}
+
+.balanceSelector select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  width: 160px;
+  padding: 0.5rem 1.5rem 0.5rem 0.75rem;
+  font-size: 0.95rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background-color: #fff;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg width='10' height='6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 10px 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  cursor: pointer;
+}
+
+.balanceSelector select:hover {
+  border-color: #999;
+}
+
+.balanceSelector select:focus {
+  outline: none;
+  border-color: #666;
+  box-shadow: 0 0 0 3px rgba(100, 100, 255, 0.2);
+}
+
 }

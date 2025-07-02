@@ -3,6 +3,11 @@ import {
   netzGetTransactionSignAxiosInstance,
   netzGetQRAxiosInstance,
 } from '../core/netz.axios';
+import type { Bitmap } from 'jimp';
+
+import QrCode from 'qrcode-reader'
+const Jimp = require('jimp')
+
 import { brevoAxiosInstance } from '../core/brevo.axios';
 import { prisma } from '../core/prisma';
 import logger from '../logger';
@@ -15,6 +20,7 @@ import crypto from 'crypto';
 import { config } from '../config';
 import { getActiveProvidersForClient, Provider } from './provider';
 import HilogateClient from './hilogateClient';
+import OyClient from './oyClient';
 
 // ─── Internal checkout page hosts ──────────────────────────────────
 const checkoutHosts = [
@@ -51,11 +57,25 @@ export interface OrderResponse {
 export const createTransaction = async (
   request: Transaction
 ): Promise<OrderResponse> => {
-  const mName = request.merchantName.toLowerCase();
-  // gunakan price sebagai jumlah input asli
+  const buyerId = request.buyer;
+
+  // 1) Cek ENV override dulu
+  let forced = config.api.forceProvider?.toLowerCase() || null;
+
+  // 2) Kalau ENV nggak set, ambil defaultProvider dari PartnerClient
+  if (!forced) {
+    const pc = await prisma.partnerClient.findUnique({
+      where: { id: buyerId },
+      select: { defaultProvider: true }
+    });
+    forced = pc?.defaultProvider?.toLowerCase() || null;
+  }
+
+  // 3) Tentukan provider akhir (forced > request.merchantName)
+  const mName = forced || request.merchantName.toLowerCase();
+
   const amount = Number(request.price);
-  // gunakan playerId jika ada, jika tidak fallback ke buyer
-  const pid = request.playerId ?? request.buyer;
+  const pid    = request.playerId ?? buyerId;
 
   // ─── Hilogate branch ───────────────────────────────────
   if (mName === 'hilogate') {
@@ -132,8 +152,81 @@ export const createTransaction = async (
   }
 
 
+ // ─── OY QRIS branch ───────────────────────────────────
+if (mName === 'oy') {
+  const merchantRec = await prisma.merchant.findFirst({ where: { name: 'oy' } })
+  if (!merchantRec) throw new Error('Internal OY merchant not found')
 
+  // 1) Simpan request
+  const trx = await prisma.transaction_request.create({
+    data: {
+      merchantId:      merchantRec.id,
+      subMerchantId:   '',
+      buyerId:         request.buyer,
+      playerId:        pid,
+      amount,
+      status:          'PENDING',
+      settlementAmount: amount,
+    },
+  })
+  const refId = trx.id
 
+  // 2) Panggil API OY
+  const oyClient = new OyClient({
+    baseURL:  config.api.oy.baseUrl,
+    username: config.api.oy.username,
+    apiKey:   config.api.oy.apiKey,
+  })
+ const qrResp = await oyClient.createQRISTransaction({
+    partner_trx_id: refId,
+    receive_amount: amount,
+    need_frontend:  false,
+    partner_user_id: pid,
+  })
+  const qrUrl = qrResp.payment_info?.qris_url
+  if (!qrUrl) throw new Error('OY QRIS belum mengembalikan qr_url')
+
+  // **pakai proxy internal** daripada decode di server
+  const proxyUrl = `${config.api.baseUrl}/api/v1/qris/${refId}`
+  const host     = pickRandomHost()
+  const checkoutUrl = `${host}/order/${refId}`
+
+  // simpan audit log
+  await prisma.transaction_response.create({
+    data: {
+      referenceId: refId,
+      responseBody: JSON.stringify(qrResp),
+      playerId: pid,
+    },
+  })
+
+  // simpan order
+  await prisma.order.create({
+    data: {
+      id:            refId,
+      userId:        request.buyer,
+      merchantId:    merchantRec.id,
+      partnerClient: { connect: { id: request.buyer } },
+      playerId:      pid,
+      amount,
+      channel:       'oy',
+      status:        'PENDING',
+      qrPayload:     proxyUrl,
+      checkoutUrl,
+      fee3rdParty:   0,
+      settlementAmount: amount,
+    },
+  })
+
+  // kembalikan proxy URL
+  return {
+    orderId:     refId,
+    checkoutUrl,
+    qrPayload:   proxyUrl,
+    playerId:    pid,
+    totalAmount: amount,
+  }
+}
   // —— GV branch —— 
   if (mName === 'gv' || mName === 'gudangvoucher') {
     let transactionObj;

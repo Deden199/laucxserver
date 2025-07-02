@@ -247,6 +247,114 @@ await prisma.order.update({
       .json(createErrorResponse(err.message || 'Unknown error'))
   }
 }
+export const oyTransactionCallback = async (req: Request, res: Response) => {
+  let rawBody = ''
+  try {
+    // 1) Baca & log raw payload
+    rawBody = (req as any).rawBody.toString('utf8')
+    logger.debug('[OY Callback] rawBody:', rawBody)
+
+    // 2) Parse payload
+    const full = JSON.parse(rawBody) as any
+    const orderId       = full.partner_trx_id
+    const pgStatusRaw   = (full.payment_status || '').toUpperCase()
+    const receivedAmt   = full.received_amount
+    const settlementSt  = full.settlement_status?.toUpperCase() || null
+
+    if (!orderId) throw new Error('Missing partner_trx_id')
+    if (receivedAmt == null) throw new Error('Missing received_amount')
+
+const existsCb = await prisma.transaction_callback.findFirst({
+  where: { referenceId: orderId }
+})
+if (!existsCb) {
+  await prisma.transaction_callback.create({
+    data: {
+      referenceId: orderId,
+      requestBody: full,
+    }
+  })
+}
+    // 4) Hitung status internal
+    const isSuccess  = pgStatusRaw === 'COMPLETE'
+    const newStatus  = isSuccess ? 'PENDING_SETTLEMENT' : pgStatusRaw
+    const newSetSt   = settlementSt ?? (isSuccess ? 'PENDING' : pgStatusRaw)
+
+    // 5) Ambil partner fee config
+    const pc = await prisma.partnerClient.findUnique({
+      where: { id: full.customer_id || full.partner_user_id || undefined },
+      select: { feePercent: true, feeFlat: true }
+    })
+    if (!pc) throw new Error(`PartnerClient not found for callback`)
+
+    // 6) Hitung fee Launcx
+    const grossDec    = new Decimal(receivedAmt)
+    const rawFee      = grossDec.times(pc.feePercent).dividedBy(100)
+    const feeLauncx   = rawFee
+      .toDecimalPlaces(3, Decimal.ROUND_HALF_UP)
+      .plus(new Decimal(pc.feeFlat))
+    const pendingAmt  = isSuccess
+      ? grossDec.minus(feeLauncx).toNumber()
+      : null
+
+    // 7) Update order
+    await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        status:           newStatus,
+        settlementStatus: newSetSt,
+        fee3rdParty:      0,
+        feeLauncx:        isSuccess ? feeLauncx.toNumber() : null,
+        pendingAmount:    pendingAmt,
+        settlementAmount: isSuccess ? null : receivedAmt,
+        updatedAt:        new Date(),
+      },
+    })
+
+    // 8) Ambil order untuk forward
+    const order = await prisma.order.findUnique({ where: { id: orderId } })
+    if (isSuccess && order) {
+      const client = await prisma.partnerClient.findUnique({
+        where: { id: order.userId },
+        select: { callbackUrl: true, callbackSecret: true }
+      })
+      if (client?.callbackUrl && client.callbackSecret) {
+        const timestamp = new Date().toISOString()
+        const nonce     = crypto.randomUUID()
+        const payload = {
+          orderId,
+          status:           newStatus,
+          settlementStatus: newSetSt,
+          grossAmount:      order.amount,
+          feeLauncx:        order.feeLauncx,
+          netAmount:        order.pendingAmount,
+          qrPayload:        order.qrPayload,
+          timestamp,
+          nonce,
+        }
+        const sig = crypto
+          .createHmac('sha256', client.callbackSecret)
+          .update(JSON.stringify(payload))
+          .digest('hex')
+
+        axios.post(client.callbackUrl, payload, {
+          headers: { 'X-Callback-Signature': sig },
+          timeout: 5000
+        })
+        .then(() => logger.info('[OY Callback] forwarded to client'))
+        .catch(err => logger.error('[OY Callback] forward failed', err.message))
+      }
+    }
+
+    // 9) Ack OY
+    return res.status(200).json(createSuccessResponse({ message: 'OK' }))
+
+  } catch (err: any) {
+    logger.error('[OY Callback] error:', err)
+    return res.status(400).json(createErrorResponse(err.message))
+  }
+}
+
 /* ═════════════════ 3. Inquiry status ═════════════════ */
 export const checkPaymentStatus = async (req: AuthRequest, res: Response) => {
   try {

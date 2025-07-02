@@ -67,14 +67,23 @@ jwtSecret: process.env.JWT_SECRET || 'default_jwt_secret',
       merchantId: process.env.GV_MERCHANT_ID || '',
       merchantKey: process.env.GV_MERCHANT_KEY || '',
     },
-    oy: {
-    apiKey: process.env.OY_API_KEY ?? '',
-    username: process.env.OY_USERNAME ?? '',
-    endpoint: {
-      prod:    'https://partner.oyindonesia.com/api/e-wallet-aggregator',
-      staging: 'https://api-stg.oyindonesia.com/api/e-wallet-aggregator'
-    }
-  },
+oy: {
+  apiKey: process.env.OY_API_KEY || '',
+  username: process.env.OY_USERNAME || '',
+  baseUrl:
+    process.env.OY_BASE_URL ||
+    (process.env.NODE_ENV === 'production'
+      ? 'https://partner.oyindonesia.com'
+      : 'https://api-stg.oyindonesia.com'),
+  // tambahkan endpoint paths jika masih butuh
+  endpoints: {
+    ewallet: '/api/e-wallet-aggregator',
+    qris: '/api/payment-routing',
+    remit: '/api/remit',
+  }
+},
+
+
     // Hilogate configuration
     hilogate: {
       // external merchant UUID dari .env

@@ -14,6 +14,7 @@ interface Client {
   isActive: boolean
   feePercent: number
   feeFlat: number
+  defaultProvider: string           // ← tambahkan ini
   parentClient?: { id: string; name: string }
   children?: { id: string; name: string }[]
 }
@@ -35,6 +36,7 @@ export default function ApiClientsPage() {
   const [err, setErr] = useState('')
   const [loading, setLoading] = useState(false)
   const [creds, setCreds] = useState<CreateResp | null>(null)
+const [newDefaultProvider, setNewDefaultProvider] = useState<string>('hilogate')
 
   useEffect(() => { loadClients() }, [])
 
@@ -60,6 +62,8 @@ export default function ApiClientsPage() {
         email: newEmail.trim(),
         feePercent: newFeePercent,
         feeFlat: newFeeFlat,
+        defaultProvider: newDefaultProvider,  // ← tambahkan ini
+
       }
       if (newParentId) payload.parentClientId = newParentId
       const res = await api.post<CreateResp>('/admin/clients', payload)
@@ -94,6 +98,13 @@ export default function ApiClientsPage() {
             placeholder="Partner Email" type="email" value={newEmail}
             onChange={e => setNewEmail(e.target.value)}
           />
+          <select
+  value={newDefaultProvider}
+  onChange={e => setNewDefaultProvider(e.target.value)}
+>
+  <option value="hilogate">Hilogate</option>
+  <option value="oy">OY Indonesia</option>
+</select>
           <select value={newParentId} onChange={e => setNewParentId(e.target.value)}>
             <option value="">No Parent</option>
             {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -145,6 +156,7 @@ export default function ApiClientsPage() {
                 <span className="mono">{c.apiSecret}</span>
                 <ClipboardCopy onClick={() => copy(c.apiSecret)} />
               </p> */}
+              <p><strong>Default PG:</strong> {c.defaultProvider}</p>
               <p><strong>Parent:</strong> {c.parentClient?.name || '-'}</p>
               <p><strong>Children:</strong> {c.children?.length || 0}</p>
               <p><strong>Fee %:</strong> {c.feePercent.toFixed(3)}</p>

@@ -18,12 +18,9 @@ export interface CreateEwalletParams {
 
 export class EwalletService {
   // Use staging for development, prod for production
-  private base =
-    process.env.NODE_ENV === 'production'
-      ? config.api.oy.endpoint.prod
-      : config.api.oy.endpoint.staging;
-  private key  = config.api.oy.apiKey;
-  private user = config.api.oy.username;
+  private base = `${config.api.oy.baseUrl}${config.api.oy.endpoints.ewallet}`;
+  private key     = config.api.oy.apiKey;
+  private user    = config.api.oy.username;
 
   /**
    * Create a generic e-wallet transaction via OY!

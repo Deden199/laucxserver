@@ -1,10 +1,9 @@
-// File: frontend/src/components/AdminLayout.tsx
 'use client'
 
 import { ReactNode, useState, useEffect } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { Menu, Home, Users, Settings, Box, LogOut } from 'lucide-react'
+import { usePathname, useRouter } from 'next/navigation'
+import { Menu, Home, Box, LogOut, Settings } from 'lucide-react'
 import { motion } from 'framer-motion'
 import styles from './Layout.module.css'
 
@@ -13,20 +12,28 @@ interface AdminLayoutProps {
 }
 
 const navItems = [
-  { label: 'Dashboard',    href: '/dashboard',            Icon: Home },
-  { label: 'Merchants',    href: '/admin/merchants',   Icon: Users },
-  { label: 'API Clients',  href: '/admin/clients',     Icon: Box },
-  { label: 'PG Providers', href: '/admin/pg-providers', Icon: Settings },
+  { label: 'Dashboard',   href: '/dashboard',        Icon: Home },
+  { label: 'API Clients', href: '/admin/clients',   Icon: Box },
 ]
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
+  const router   = useRouter()
 
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
   }, [open])
+
+  const handleLogout = () => {
+    // 1. Hapus token atau session
+    localStorage.removeItem('token')
+    // (jika pakai cookie: document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT')
+
+    // 2. Redirect ke login
+    router.push('/login')
+  }
 
   return (
     <div className={styles.container}>
@@ -39,7 +46,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       >
         <div className={styles.logo} onClick={() => setOpen(o => !o)}>
           <span className={styles.logoIcon}>🛠️</span>
-          {open && <span className={styles.logoText}>ADMIN PANEL</span>}
+          {open && <span className={styles.logoText}>ADMIN</span>}
         </div>
 
         <nav className={styles.nav}>
@@ -57,7 +64,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         </nav>
 
         {open && (
-          <button className={styles.logoutBtn} onClick={() => {/* TODO: handle logout */}}>
+          <button className={styles.logoutBtn} onClick={handleLogout}>
             <LogOut size={18} />
             <span>Logout</span>
           </button>
@@ -67,7 +74,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       {/* Backdrop for mobile */}
       {open && <div className={styles.backdrop} onClick={() => setOpen(false)} />}
 
-      {/* Main content area */}
+      {/* Main content */}
       <div className={styles.main}>
         <header className={styles.header}>
           <button
@@ -78,9 +85,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             <Menu size={24} />
           </button>
           <h1 className={styles.title}>Admin Dashboard</h1>
-          <div className={styles.headerRight}>
+          {/* <div className={styles.headerRight}>
             <Settings size={20} className={styles.iconBtn} />
-          </div>
+          </div> */}
         </header>
 
         <main className={styles.content}>

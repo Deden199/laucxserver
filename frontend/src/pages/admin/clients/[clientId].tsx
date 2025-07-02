@@ -15,6 +15,7 @@ interface Client {
   feeFlat: number
   parentClientId?: string
   childrenIds?: string[]
+  defaultProvider?: string
 }
 
 type Option = { id: string; name: string }
@@ -32,6 +33,7 @@ export default function EditClientPage() {
   const [feeFlat, setFeeFlat]             = useState<number>(0)
   const [parentClientId, setParentClientId] = useState<string>('')
   const [childrenIds, setChildrenIds]     = useState<string[]>([])
+  const [defaultProvider, setDefaultProvider] = useState<string>('')
   const [loading, setLoading]             = useState(false)
   const [error, setError]                 = useState('')
 
@@ -48,6 +50,7 @@ export default function EditClientPage() {
         setFeeFlat(c.feeFlat)
         setParentClientId(c.parentClientId || '')
         setChildrenIds(c.childrenIds || [])
+        setDefaultProvider(c.defaultProvider || '')
       })
       .catch(() => setError('Gagal memuat data client'))
   }, [clientId])
@@ -66,6 +69,10 @@ export default function EditClientPage() {
       setError('Name tidak boleh kosong')
       return
     }
+    if (!defaultProvider) {
+      setError('Default provider harus dipilih')
+      return
+    }
     setLoading(true)
     setError('')
     try {
@@ -76,6 +83,7 @@ export default function EditClientPage() {
         feeFlat,
         parentClientId: parentClientId || null,
         childrenIds,
+        defaultProvider
       })
       router.push('/admin/clients')
     } catch (e: any) {
@@ -104,6 +112,21 @@ export default function EditClientPage() {
               onChange={e => setName(e.target.value)}
               placeholder="Client Name"
             />
+          </div>
+
+          <div className="field">
+            <label>Default Provider</label>
+  <div className="default-select-wrapper">
+  <select
+    value={defaultProvider}
+    onChange={e => setDefaultProvider(e.target.value)}
+  >
+    <option value="">-- Select Provider --</option>
+    <option value="hilogate">Hilogate</option>
+    <option value="oy">OY Indonesia</option>
+  </select>
+</div>
+
           </div>
 
           <div className="field">
@@ -188,7 +211,8 @@ export default function EditClientPage() {
           </div>
 
         </form>
-      </div>
+</div>
+
 
       <style jsx>{`
         .container {
@@ -317,6 +341,46 @@ export default function EditClientPage() {
         .action button:not(:disabled):hover {
           background: #005bb5;
         }
+          /* container untuk custom arrow */
+.default-select-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+/* styling dropdown */
+.default-select-wrapper select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  width: 100%;
+  padding: 0.6rem 1rem;
+  font-size: 1rem;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius);
+  background-color: #fff;
+  color: var(--clr-text);
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+/* border-color saat focus */
+.default-select-wrapper select:focus {
+  outline: none;
+  border-color: var(--clr-primary);
+}
+
+/* panah custom */
+.default-select-wrapper::after {
+  content: '▾';
+  position: absolute;
+  top: 50%;
+  right: 1rem;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--clr-muted);
+  font-size: 0.8rem;
+}
+
       `}</style>
     </div>
   )
