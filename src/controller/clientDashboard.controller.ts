@@ -1,3 +1,5 @@
+// src/controllers/clientDashboard.controller.ts
+
 import { Response } from 'express'
 import { prisma } from '../core/prisma'
 import { DisbursementStatus } from '@prisma/client'
@@ -5,6 +7,8 @@ import hilogateClient from '../service/hilogateClient'
 import { ClientAuthRequest } from '../middleware/clientAuth'
 import ExcelJS from 'exceljs'
 import crypto from 'crypto';
+import { retry } from '../utils/retry';
+
 
 
 
@@ -333,173 +337,3 @@ console.log('export clientIds:', clientIds)
   res.end()
 }
 
-const BANK_NAMES: Record<string, string> = {
-  mandiri:         'Bank Mandiri',
-  bri:             'Bank Rakyat Indonesia',
-  bca:             'Bank Central Asia',
-  cimb:            'CIMB Niaga & CIMB Niaga Syariah',
-  muamalat:        'Bank Muamalat',
-  permata:         'Bank Permata & Permata Syariah',
-  bii:             'Maybank Indonesia',
-  panin:           'Panin Bank',
-  ocbc:            'OCBC NISP',
-  citibank:        'Citibank',
-  artha:           'Bank Artha Graha Internasional',
-  tokyo:           'Bank of Tokyo Mitsubishi UFJ',
-  dbs:             'DBS Indonesia',
-  standard_char:   'Standard Chartered Bank',
-  // tambahkan kode lain jika perlu
-}
-/**
- * POST /api/v1/client/dashboard/withdraw/validate
- */
-export async function validateAccount(req: ClientAuthRequest, res: Response) {
-  const { account_number, bank_code } = req.body
-  try {
-    const payload = (await hilogateClient.validateAccount(account_number, bank_code)).data
-
-    if (payload.status !== 'valid') {
-      return res.status(400).json({ error: 'Invalid account' })
-    }
-
-    // Hanya kirim kembali data yang tersedia
-    return res.json({
-      account_number: payload.account_number,
-      account_holder: payload.account_holder,
-      bank_code:      payload.bank_code,
-      status:         payload.status,
-    })
-  } catch (err: any) {
-    console.error('[validateAccount] error:', err)
-    return res.status(400).json({ message: err.message || 'Validasi akun gagal' })
-  }
-}
-
-// helper retry untuk deadlock/write conflict
-async function retry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
-  let lastError: any
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await fn()
-    } catch (e: any) {
-      lastError = e
-      if (e.message?.includes('write conflict') || e.code === 'P2034') {
-        // tunggu sejenak sebelum retry
-        await new Promise(r => setTimeout(r, 50 * (i + 1)))
-        continue
-      }
-      throw e
-    }
-  }
-  throw lastError
-}
-
-/**
- * POST /api/v1/client/dashboard/withdraw
- */
-export const requestWithdraw = async (req: ClientAuthRequest, res: Response) => {
-  try {
-    const { account_number, bank_code, account_name_alias, amount } = req.body
-
-    // 1) Ambil user + partnerClient + children
-    const user = await prisma.clientUser.findUnique({
-      where: { id: req.clientUserId! },
-      include: {
-        partnerClient: {
-          select: {
-            id: true,
-            balance: true,
-            children: { select: { id: true } }
-          }
-        }
-      }
-    })
-    if (!user) {
-      return res.status(404).json({ error: 'User tidak ditemukan' })
-    }
-    const pc = user.partnerClient!
-
-    // 2) Jika ini parent (punya children), tolak request
-    if (pc.children.length > 0) {
-      return res
-        .status(403)
-        .json({ error: 'Parent hanya memiliki hak baca; tidak dapat melakukan withdraw' })
-    }
-
-    // 3) (Hanya child sampai sini) cek saldo aktif
-    if (amount > pc.balance) {
-      return res.status(400).json({ error: 'Saldo tidak mencukupi' })
-    }
-
-    // 4) Validasi account via Hilogate
-    const valid = (await hilogateClient.validateAccount(account_number, bank_code)).data
-    if (valid.status !== 'valid') {
-      return res.status(400).json({ error: 'Akun bank tidak valid' })
-    }
-    const acctHolder = valid.account_holder
-    const bankName   = BANK_NAMES[bank_code] ?? ''
-    const branchName = ''
-
-    // 5) Tentukan alias
-    const alias = account_name_alias ?? acctHolder
-
-    // 6) Buat record withdraw + hold saldo
-    const refId = `wd-${Date.now()}`
-    const wr = await prisma.withdrawRequest.create({
-      data: {
-        refId,
-        partnerClientId:  pc.id,
-        accountName:      acctHolder,
-        accountNameAlias: alias,
-        accountNumber:    account_number,
-        bankCode:         bank_code,
-        bankName,
-        branchName,
-        amount,
-        status:           DisbursementStatus.PENDING
-      }
-    })
-    await prisma.partnerClient.update({
-      where: { id: pc.id },
-      data: { balance: { decrement: amount } }
-    })
-
-    // 7) Kirim ke Hilogate & update status seperti biasa…
-    const hg = await hilogateClient.createWithdrawal({
-      ref_id:             refId,
-      amount,
-      currency:           'IDR',
-      account_number,
-      account_name:       acctHolder,
-      account_name_alias: alias,
-      bank_code,
-      bank_name:          bankName,
-      branch_name:        branchName,
-      description:        `Withdraw Rp ${amount}`
-    })
-
-    // 8) Mapping status + idempotent update
-    const { id: pgId, status: hgStatus, is_transfer_process } = hg.data
-    const newStatus: DisbursementStatus =
-      ['WAITING','PENDING','PROCESSING'].includes(hgStatus)  ? DisbursementStatus.PENDING  :
-      ['COMPLETED','SUCCESS'].includes(hgStatus)            ? DisbursementStatus.COMPLETED :
-                                                             DisbursementStatus.FAILED
-
-    await retry(() =>
-      prisma.withdrawRequest.updateMany({
-        where: { refId, status: DisbursementStatus.PENDING },
-        data: {
-          paymentGatewayId:  pgId,
-          isTransferProcess: is_transfer_process,
-          status:            newStatus
-        }
-      })
-    )
-
-    return res.status(201).json({ id: wr.id, refId, status: newStatus })
-
-  } catch (err: any) {
-    console.error('[requestWithdraw] error:', err)
-    return res.status(500).json({ error: err.message || 'Internal server error' })
-  }
-}

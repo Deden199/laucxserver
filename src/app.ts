@@ -15,6 +15,8 @@ import simulateRoutes from './route/simulate.routes';
 import ewalletRoutes from './route/ewallet.routes';
 import authRoutes from './route/auth.routes';
 import paymentRouter from './route/payment.routes';
+import bankRoutes from './route/bank.routes'
+
 // import disbursementRouter from './route/disbursement.routes';
 import paymentController, { transactionCallback } from './controller/payment';
 
@@ -82,6 +84,8 @@ app.use(requestLogger);
 // JSON body parser
 app.use(express.json({ limit: '20kb' }));
 app.use('/api/v1/withdrawals', withdrawalRoutes,)
+app.use('/api/v1', bankRoutes)
+
 /* ========== 1. PUBLIC ROUTES ========== */
 app.use('/api/v1/auth', authRoutes);       // login / register for admins and clients
 app.use('/api/v1', ewalletRoutes);         // public e-wallet endpoints

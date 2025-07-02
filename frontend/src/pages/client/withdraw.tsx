@@ -69,8 +69,15 @@ const [selectedChild, setSelectedChild] = useState<'all' | string>('all')
   const [dateTo, setDateTo] = useState('')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(10)
+const [banks, setBanks] = useState<{ code: string; name: string }[]>([])
 
   /* ──────────────── Initial fetch ──────────────── */
+  useEffect(() => {
+  apiClient.get<{ banks: { code: string; name: string }[] }>('/banks')
+    .then(res => setBanks(res.data.banks))
+    .catch(console.error)
+}, [])
+
 useEffect(() => {
   setLoading(true)
   setPageError('')            
@@ -135,13 +142,14 @@ useEffect(() => {
       )
       if (data.status === 'valid') {
          const holder = data.account_holder as string
-
+const bankObj = banks.find(b => b.code === form.bankCode);
+ 
   setForm(f => ({
           ...f,
           accountName:      holder,
           accountNameAlias: deriveAlias(holder),
-          bankName:         data.bank_name,
-          branchName:       data.branch_name,
+            bankName:         bankObj?.name || '',
+  branchName:       '', 
         }))
                 setIsValid(true)
       } else throw new Error('Akun tidak valid')
@@ -154,58 +162,38 @@ useEffect(() => {
   }
 
   const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!isValid || error) return
-    setBusy(b => ({ ...b, submitting: true }))
-    try {
-              // ← REPLACE: kirim payload lengkap sesuai spec
-      const payload = {
-        ref_id: `wd-${Date.now()}`,
-        amount: +form.amount,
-        currency: 'IDR',
-        beneficiary: {
-          account_number:     form.accountNumber,
-          account_name:       form.accountName,
-          account_name_alias: form.accountNameAlias,
-          bank_code:          form.bankCode,
-          bank_name:          form.bankName,
-          branch_name:        form.branchName,
-        },
-        description: `Withdraw Rp ${form.amount}`,
+  e.preventDefault()
+  if (!isValid || error) return
+  setBusy(b => ({ ...b, submitting: true }))
+  try {
+    await apiClient.post(
+      '/client/withdrawals',
+      {
+        account_number:     form.accountNumber,
+        bank_code:          form.bankCode,
+        account_name_alias: form.accountNameAlias,
+        amount:             +form.amount,
       }
-
-await apiClient.post('/client/withdrawals', {
-  ref_id: payload.ref_id,
-  account_name: payload.beneficiary.account_name,
-  account_name_alias: payload.beneficiary.account_name_alias,
-  account_number: payload.beneficiary.account_number,
-  bank_code: payload.beneficiary.bank_code,
-  bank_name: payload.beneficiary.bank_name,
-  branch_name: payload.beneficiary.branch_name,
-  amount: payload.amount,
-  currency: payload.currency,
-  description: payload.description,
-});
-
-      /* refresh balance + history */
-      const [d, h] = await Promise.all([
-        apiClient.get('/client/dashboard'),
-        apiClient.get<{ data: Withdrawal[] }>('/client/withdrawals'),
-      ])
-      setBalance(d.data.balance)
-      setPending(d.data.totalPending ?? 0)
-      setWithdrawals(h.data.data)
-      setForm(f => ({
-        ...f,
-        amount: '',
-        accountName:      '',
-        accountNameAlias: '',
-        bankName:         '',
-        branchName:       '',
-      }))
+    )
+    // refresh balance + history seperti biasa…
+    const [d, h] = await Promise.all([
+      apiClient.get('/client/dashboard'),
+      apiClient.get<{ data: Withdrawal[] }>('/client/withdrawals'),
+    ])
+    setBalance(d.data.balance)
+    setPending(d.data.totalPending ?? 0)
+    setWithdrawals(h.data.data)
+    setForm(f => ({
+      ...f,
+      amount: '',
+      accountName:      '',
+      accountNameAlias: '',
+      bankName:         '',
+      branchName:       '',
+    }))
     setIsValid(false)
-      setOpen(false)
-    } catch (err: any){
+    setOpen(false)
+  } catch (err: any) {
     if (axios.isAxiosError(err)) {
       setError(err.response?.data?.error || 'Submit gagal')
     } else {
@@ -214,7 +202,8 @@ await apiClient.post('/client/withdrawals', {
   } finally {
     setBusy(b => ({ ...b, submitting: false }))
   }
-  }
+}
+
 
   const exportToExcel = () => {
     const rows = [
@@ -453,17 +442,13 @@ await apiClient.post('/client/withdrawals', {
               {/* bank */}
               <div className={styles.field}>
                 <label>Bank</label>
-                <select
-                  name="bankCode"
-                  value={form.bankCode}
-                  onChange={handleChange}
-                  required
-                >
-                  <option value="">— Pilih Bank —</option>
-                  <option>bca</option>
-                  <option>bni</option>
-                  <option>mandiri</option>
-                </select>
+<select name="bankCode" value={form.bankCode} onChange={handleChange} required>
+  <option value="">— Pilih Bank —</option>
+  {banks.map(b => (
+    <option key={b.code} value={b.code}>{b.name}</option>
+  ))}
+</select>
+
               </div>
 
               {/* account number */}

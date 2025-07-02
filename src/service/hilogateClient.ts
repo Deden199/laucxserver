@@ -24,6 +24,8 @@ class HilogateClient {
     return crypto.createHash('md5').update(payload).digest('hex');
   }
 
+  
+
   /** Validasi signature callback Hilogate: MD5(request_body + secretKey) */
   public verifyCallback(rawBody: string, signature: string): boolean {
     const expected = crypto
@@ -36,10 +38,37 @@ class HilogateClient {
     // note: request tetap private
     return this.request('get', '/api/v1/balance')
   }
-  /** Validasi rekening bank */
-  public async validateAccount(account_number: string, bank_code: string): Promise<any> {
-    return this.request('post', '/api/v1/bank-accounts/validate', { account_number, bank_code });
+
+    public async getBankCodes(): Promise<{ name: string; code: string }[]> {
+    const path = '/api/v1/references/bank-codes'
+    const signature = this.sign(path, null)
+
+    const resp = await this.axiosInst.get<{
+      code: number
+      data: { name: string; code: string }[]
+    }>(path, {
+      headers: {
+        'X-Signature': signature,
+        'X-Merchant-Key': this.secretKey,    // wajib di endpoint ini
+      },
+    })
+
+    return resp.data.data
   }
+  public async validateAccount(account_number: string, bank_code: string): Promise<any> {
+  const path = '/api/v1/bank-accounts/validate'
+  const body = { account_number, bank_code }
+  const signature = this.sign(path, body)
+  console.log('[HILOGATE VALIDATE]', {
+    url:    this.axiosInst.defaults.baseURL + path,
+    env:    this.axiosInst.defaults.headers['X-Environment'],
+    mid:    this.axiosInst.defaults.headers['X-Merchant-ID'],
+    sig:    signature,
+    body,
+  })
+  return this.request('post', path, body);
+}
+
 
   /** Internal request helper */
 private async request(
@@ -62,7 +91,7 @@ private async request(
       headers,
       data: body
     });
-    return res.data;
+    return res.data.data;
   }
 }
 

@@ -17,6 +17,15 @@ export async function syncWithHilogate(refId: string) {
   })
 }
 
+export async function fetchBankCodes() {
+  return await hilogateClient.getBankCodes()
+}
+
+export async function inquiryAccount(accountNumber: string, bankCode: string, requestId?: string) {
+  return await hilogateClient.validateAccount(accountNumber, bankCode)
+}
+
+
 export async function retryDisbursement(refId: string) {
   // 1) Ambil ulang dari tabel WithdrawRequest
   const wr = await prisma.withdrawRequest.findUnique({ where: { refId } })
