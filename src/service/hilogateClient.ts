@@ -36,7 +36,7 @@ class HilogateClient {
   }
   public async getBalance() {
     // note: request tetap private
-    return this.request('get', '/api/v1/balance')
+    return this.requestFull('get', '/api/v1/balance')
   }
 
     public async getBankCodes(): Promise<{ name: string; code: string }[]> {

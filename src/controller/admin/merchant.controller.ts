@@ -304,37 +304,69 @@ export async function getDashboardWithdrawals(req: Request, res: Response) {
   }
 }
 
-export const getDashboardSummary = async (_req, res) => {
+// src/controller/admin/merchant.controller.ts
+
+export const getDashboardSummary = async (req, res) => {
   try {
-    // pakai helper public
-    const result = await HilogateClient.getBalance()
-    const {
-      active_balance:   hilogateBalance = 0,
-      pending_balance:  activeBalance   = 0,
-      total_withdrawal,
-      pending_withdrawal
-    } = result.data
-  let oyBalance = 0
-  try {
-    const oyResp = await oyClient.getBalance()
-    // asumsi response shape { status:…, balance: number } atau { data: { balance:… } }
-    oyBalance = oyResp.balance ?? (oyResp.data?.balance) ?? 0
-  } catch (err) {
-    console.error('[OY] getBalance error', err)
-  }
+    // Ambil filter partnerClientId dari query (sesuaikan nama param-mu)
+    const { partnerClientId } = req.query as any;
+
+    // ─── 1) Hilogate ────────────────────────────────────
+    const hgResp = await HilogateClient.getBalance();
+    const hgData = hgResp.data;
+    console.log('[HILOGATE PARSED]', hgData);
+
+    const hilogateBalance = hgData.active_balance ?? 0;
+    const total_withdrawal   = hgData.total_withdrawal   ?? 0;
+    const pending_withdrawal = hgData.pending_withdrawal ?? 0;
+
+    // ─── 2) OY ──────────────────────────────────────────
+    let oyBalance = 0;
+    try {
+      const oyResp = await oyClient.getBalance();
+      const oyData = (oyResp as any).data ?? oyResp;
+      console.log('[OY PARSED]', oyData);
+      oyBalance = oyData.availableBalance ?? oyData.balance ?? 0;
+    } catch (err) {
+      console.error('[OY] getBalance error', err);
+    }
+
+    // ─── 3) Total Client Balance ───────────────────────
+    let totalClientBalance = 0;
+    if (partnerClientId && partnerClientId !== 'all') {
+      // ambil satu client
+      const pc = await prisma.partnerClient.findUnique({
+        where: { id: partnerClientId },
+        select: { balance: true }
+      });
+      totalClientBalance = pc?.balance ?? 0;
+    } else {
+      // jumlahkan semua client balances
+      const agg = await prisma.partnerClient.aggregate({
+        _sum: { balance: true },
+        where: { isActive: true }   // misal hanya client aktif
+      });
+      totalClientBalance = agg._sum.balance ?? 0;
+    }
+
+    // ─── 4) Response ────────────────────────────────────
     return res.json({
       hilogateBalance,
-      activeBalance,
+      oyBalance,
+      totalClientBalance,
       total_withdrawal,
       pending_withdrawal,
-      oyBalance           // ← baru
-
-    })
+    });
   } catch (err) {
-    console.error('[getDashboardSummary]', err)
-    return res.status(500).json({ error: 'Failed to fetch Hilogate balance' })
+    console.error('[getDashboardSummary]', err);
+    return res
+      .status(500)
+      .json({ error: 'Failed to fetch dashboard summary' });
   }
 }
+
+
+
 export async function exportDashboardAll(req: Request, res: Response) {
   try {
     const { date_from, date_to, partnerClientId } = req.query as any
