@@ -258,8 +258,8 @@ export const oyTransactionCallback = async (req: Request, res: Response) => {
     const full = JSON.parse(rawBody) as any
     const orderId       = full.partner_trx_id
     const pgStatusRaw   = (full.payment_status || '').toUpperCase()
-    const receivedAmt   = full.received_amount
-    const settlementSt  = full.settlement_status?.toUpperCase() || null
+const receivedAmt = full.receive_amount
+     const settlementSt  = full.settlement_status?.toUpperCase() || null
 
     if (!orderId) throw new Error('Missing partner_trx_id')
     if (receivedAmt == null) throw new Error('Missing received_amount')
@@ -281,11 +281,19 @@ if (!existsCb) {
     const newSetSt   = settlementSt ?? (isSuccess ? 'PENDING' : pgStatusRaw)
 
     // 5) Ambil partner fee config
-    const pc = await prisma.partnerClient.findUnique({
-      where: { id: full.customer_id || full.partner_user_id || undefined },
-      select: { feePercent: true, feeFlat: true }
-    })
-    if (!pc) throw new Error(`PartnerClient not found for callback`)
+// (setelah parse full dan sebelum hitung fee)
+const orderRecord = await prisma.order.findUnique({
+  where: { id: orderId },
+  select: { userId: true }  // userId = partnerClient.id
+})
+if (!orderRecord) throw new Error('Order not found for callback')
+
+const pc = await prisma.partnerClient.findUnique({
+  where: { id: orderRecord.userId },
+  select: { feePercent: true, feeFlat: true, callbackUrl: true, callbackSecret: true }
+})
+if (!pc) throw new Error('PartnerClient not found for callback')
+
 
     // 6) Hitung fee Launcx
     const grossDec    = new Decimal(receivedAmt)
@@ -365,6 +373,45 @@ export const checkPaymentStatus = async (req: AuthRequest, res: Response) => {
   }
 }
 
+export const retryOyCallback = async (req: Request, res: Response) => {
+  const { referenceId } = req.params;
+  try {
+    // 1) Ambil record callback OY berdasarkan referenceId
+    const cb = await prisma.transaction_callback.findFirst({
+      where: { referenceId }
+    });
+    if (!cb) {
+      return res.status(404).json({ error: 'Callback OY tidak ditemukan untuk ID ini' });
+    }
+
+    // 2) Rebuild request-like object
+    const fakeReq: any = {
+      rawBody: Buffer.from(JSON.stringify(cb.requestBody), 'utf8'),
+      headers: {},       // OY QRIS callback tidak perlu signature
+      // Express akan pakai rawBody, nggak perlu body parsed lagi
+    };
+    const fakeRes: any = {
+      status(code: number) {
+        return {
+          json(payload: any) {
+            // kita cuma ingin callback logic dijalankan, 
+            // hasilnya tidak perlu ditangani di sini
+            return Promise.resolve({ code, payload });
+          }
+        };
+      }
+    };
+
+    // 3) Jalankan ulang handler OY
+    await oyTransactionCallback(fakeReq, fakeRes);
+
+    return res.json({ success: true, message: 'Callback OY berhasil di‐retry' });
+  } catch (err: any) {
+    logger.error('[Retry OY Callback] error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
 /* ═════════════════ 4. Order Aggregator (QR/Checkout) ═════════════════ */
 export const createOrder = async (req: Request, res: Response) => {
   try {
@@ -408,5 +455,6 @@ export default {
   transactionCallback,
   checkPaymentStatus,
   createOrder,
+  retryOyCallback,        // ← tambahkan ini
   getOrder,
 }

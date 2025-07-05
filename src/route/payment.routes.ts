@@ -38,5 +38,9 @@ paymentRouter.get(
   apiKeyAuth,
   paymentController.checkPaymentStatus
 )
+paymentRouter.post(
+  '/transaction/callback/oy/retry/:referenceId',
+  paymentController.retryOyCallback
+);
 
 export default paymentRouter
