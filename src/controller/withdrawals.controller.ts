@@ -32,8 +32,10 @@ export const listSubMerchants = async (req: ClientAuthRequest, res: Response) =>
 
   // 2) Ambil semua sub_merchant dengan provider matching defaultProvider
   const subs = await prisma.sub_merchant.findMany({
-    where: { provider: defaultProvider },
-    select: { id: true, provider: true }
+    where: {
+      provider:   defaultProvider,
+      merchantId: partnerClientId,    // hanya sub-merchant milik partner
+    },    select: { id: true, provider: true }
   })
 
   // 3) Hitung balance tiap sub-merchant dari Order, bukan transaction_request
@@ -382,16 +384,15 @@ export const requestWithdraw = async (req: ClientAuthRequest, res: Response) => 
       // a) Ambil fee withdraw
       const pc = await tx.partnerClient.findUniqueOrThrow({
         where: { id: partnerClientId },
-        select: { withdrawFeePercent: true, withdrawFeeFlat: true }
+        select: { withdrawFeePercent: true, withdrawFeeFlat: true, balance: true }
       })
 
-      // b) Hitung total masuk (settled) dari transaction_request
-      const inAgg = await tx.transaction_request.aggregate({
+      // b) Hitung total masuk (settled) dari Order
+      const inAgg = await tx.order.aggregate({
         _sum: { settlementAmount: true },
-        where: { subMerchantId, settlementAt: { not: null } }
+        where: { subMerchantId, settlementTime: { not: null } }
       })
       const totalIn = inAgg._sum.settlementAmount ?? 0
-
       // c) Hitung total keluar (withdraw) dari WithdrawRequest
       const outAgg = await tx.withdrawRequest.aggregate({
         _sum: { netAmount: true },
@@ -405,6 +406,7 @@ export const requestWithdraw = async (req: ClientAuthRequest, res: Response) => 
       // d) Validasi available balance
       const available = totalIn - totalOut
       if (amount > available) throw new Error('InsufficientBalance')
+      if (pc.balance < amount) throw new Error('InsufficientBalance')
 
       // e) Hitung fee dan net amount
       const feePctAmt = (pc.withdrawFeePercent / 100) * amount
@@ -432,10 +434,11 @@ export const requestWithdraw = async (req: ClientAuthRequest, res: Response) => 
       })
 
       // g) Hold saldo di PartnerClient
-      await tx.partnerClient.update({
-        where: { id: partnerClientId },
-        data: { balance: { decrement: amount } }
+      const upd = await tx.partnerClient.updateMany({
+        where: { id: partnerClientId, balance: { gte: amount } },
+        data:  { balance: { decrement: amount } }
       })
+      if (!upd.count) throw new Error('InsufficientBalance')
 
       return w
     })

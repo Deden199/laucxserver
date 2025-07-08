@@ -120,6 +120,7 @@ oy: {
     connectionString:
       process.env.DATABASE_URL || '',
   },
+  
   // Environment and feature flags
   nodeEnv: process.env.NODE_ENV || 'development',
   mockEnabled: process.env.MOCK_ENABLED === 'true',
