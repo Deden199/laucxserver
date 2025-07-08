@@ -7,8 +7,9 @@ import crypto from 'crypto'
 import { config } from '../config'
 import logger from '../logger'
 import { DisbursementStatus } from '@prisma/client'
-import { getActiveProviders } from '../service/provider';
+import { getActiveProviders, getProviders } from '../service/provider';
 import {OyClient}          from '../service/oyClient'    // sesuaikan path
+import { retryDisbursementOY } from '../service/oy.service'
 
 
 
@@ -159,7 +160,7 @@ export async function retryWithdrawal(req: Request, res: Response) {
   // 1) Ownership check
   const wr = await prisma.withdrawRequest.findUnique({
     where: { refId: id },
-    select: { refId: true, status: true, partnerClientId: true }
+    select: { refId: true, status: true, partnerClientId: true, sourceProvider: true }
   });
   if (!wr || wr.partnerClientId !== clientId) {
     return res.status(403).json({ error: 'Access denied' });
@@ -174,8 +175,10 @@ export async function retryWithdrawal(req: Request, res: Response) {
 
   // 3) Retry process with merchantId
   try {
-    const result = await retryDisbursement(wr.refId, wr.partnerClientId);
-    return res.json({ success: true, result });
+    const result = wr.sourceProvider === 'HILOGATE'
+      ? await retryDisbursement(wr.refId, wr.partnerClientId)
+      : await retryDisbursementOY(wr.refId, wr.partnerClientId)   
+       return res.json({ success: true, result });
   } catch (err: any) {
     console.error('Retry withdrawal error:', err);
     return res
@@ -204,33 +207,51 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
   try {
     // 1) Ambil & parse raw body
     // @ts-ignore
-    const raw = (req.rawBody as Buffer).toString('utf8')
-    const full = JSON.parse(raw) as any
+    const raw  = (req as any).rawBody as Buffer | string
+    const body = typeof raw === 'string' ? raw : raw.toString('utf8')
+    const full = JSON.parse(body)
 
-    // 2) Verifikasi signature
-    const gotSig = (req.header('X-Signature') || '').trim()
-    if (gotSig !== full.merchant_signature) {
-      return res.status(400).json({ error: 'Invalid signature' })
+    // 2) Deteksi provider
+    const isOy        = full.status && typeof full.status.code !== 'undefined'
+    const isHilogate  = !isOy
+
+    // 3) Verifikasi signature untuk Hilogate
+    if (isHilogate) {
+      const gotSig = (req.header('X-Signature') || '').trim()
+      if (gotSig !== full.merchant_signature) {
+        return res.status(400).json({ error: 'Invalid signature' })
+      }
     }
 
-    // 3) Ambil payload
-    const data = full.data ?? full
-    const { ref_id, status, net_amount, completed_at } = data
+    // 4) Ambil payload utama
+    const data = isHilogate ? (full.data ?? full) : full
+    const ref_id     = isHilogate ? data.ref_id : data.partner_trx_id
+    const statusRaw  = isHilogate ? data.status : data.status.code
+    const net_amount = isHilogate ? data.net_amount : data.amount
+    const completed  = isHilogate ? data.completed_at : data.last_updated_date
+
     if (!ref_id || net_amount == null) {
       return res.status(400).json({ error: 'Invalid payload' })
     }
 
-    // 4) Fetch record awal untuk cek refund
-    const wr = await prisma.withdrawRequest.findUnique({
+    await prisma.disbursement_callback.create({
+      data: { referenceId: ref_id, requestBody: full },
+    })
+        const wr = await prisma.withdrawRequest.findUnique({
       where: { refId: ref_id },
       select: { amount: true, partnerClientId: true, status: true }
     })
     if (!wr) return res.status(404).send('Not found')
 
-    // 5) Tentukan newStatus
-    const up = status.toUpperCase()
-    const newStatus: DisbursementStatus =
-      up === 'COMPLETED' || up === 'SUCCESS'
+
+    const up = String(statusRaw).toUpperCase()
+    const newStatus: DisbursementStatus = isOy
+      ? up === '000'
+        ? DisbursementStatus.COMPLETED
+        : up === '101'
+          ? DisbursementStatus.PENDING
+          : DisbursementStatus.FAILED
+      : up === 'COMPLETED' || up === 'SUCCESS'
         ? DisbursementStatus.COMPLETED
         : up === 'FAILED' || up === 'ERROR'
           ? DisbursementStatus.FAILED
@@ -243,7 +264,7 @@ export const withdrawalCallback = async (req: Request, res: Response) => {
         data: {
           status:      newStatus,
           netAmount:   net_amount,
-          completedAt: completed_at ? new Date(completed_at) : undefined,
+          completedAt: completed ? new Date(completed) : undefined,
         },
       })
     )
@@ -277,9 +298,9 @@ export async function validateAccount(req: ClientAuthRequest, res: Response) {
     }
 
     // 2) Ambil kredensial aktif (weekday/weekend) dari DB
-    const subs = await getActiveProviders(merchant.id, 'hilogate');
+    const subs = await getProviders(merchant.id, 'hilogate');
     if (subs.length === 0) {
-      return res.status(500).json({ error: 'No active Hilogate credentials today' });
+      return res.status(500).json({ error: 'No Hilogate credentials found' });
     }
  const cfg = subs[0].config as unknown as HilogateConfig;
 
@@ -343,12 +364,12 @@ export const requestWithdraw = async (req: ClientAuthRequest, res: Response) => 
     // 1) Ambil konfigurasi credentials dari provider
     let providerCfg: any
     if (sourceProvider === 'HILOGATE') {
-      const subs = await getActiveProviders(partnerClientId, 'hilogate')
-      if (!subs.length) throw new Error('No active Hilogate credentials')
+      const subs = await getProviders(partnerClientId, 'hilogate')
+      if (!subs.length) throw new Error('No Hilogate credentials')
       providerCfg = subs[0].config
     } else {
-      const subs = await getActiveProviders(partnerClientId, 'oy')
-      if (!subs.length) throw new Error('No active OY credentials')
+      const subs = await getProviders(partnerClientId, 'oy')
+      if (!subs.length) throw new Error('No OY credentials')
       providerCfg = subs[0].config
     }
 

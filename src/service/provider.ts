@@ -137,9 +137,78 @@ return subs.map(s => {
     return {
       ...common,
       config: cfg
-    } as ResultSub<OyConfig>
+  } as ResultSub<OyConfig>
   }
 })
+}
+// -------------------------------------------------------------------------
+// Get providers without checking active schedule
+// -------------------------------------------------------------------------
+// overload for Hilogate
+export async function getProviders(
+  merchantId: string,
+  provider: 'hilogate'
+): Promise<ResultSub<HilogateConfig>[]>
+
+// overload for OY
+export async function getProviders(
+  merchantId: string,
+  provider: 'oy'
+): Promise<ResultSub<OyConfig>[]>
+
+// implementation
+export async function getProviders(
+  merchantId: string,
+  provider: 'hilogate' | 'oy'
+): Promise<Array<ResultSub<HilogateConfig> | ResultSub<OyConfig>>> {
+  const subs = await prisma.sub_merchant.findMany({
+    where: {
+      merchantId,
+      provider,
+    },
+    select: {
+      id:          true,
+      provider:    true,
+      fee:         true,
+      credentials: true,
+    }
+  })
+
+  return subs.map(s => {
+    const common = {
+      id:       s.id,
+      provider: s.provider,
+      fee:      s.fee,
+    }
+
+    const raw = s.credentials as unknown as {
+      merchantId: string
+      env?:       'sandbox' | 'live' | 'production'
+      secretKey:  string
+    }
+
+    if (provider === 'hilogate') {
+      const cfg: HilogateConfig = {
+        merchantId: raw.merchantId,
+        env:        raw.env ?? 'sandbox',
+        secretKey:  raw.secretKey,
+      }
+      return {
+        ...common,
+        config: cfg
+      } as ResultSub<HilogateConfig>
+    } else {
+      const cfg: OyConfig = {
+        baseUrl:  process.env.OY_BASE_URL!,
+        username: raw.merchantId,
+        apiKey:   raw.secretKey,
+      }
+      return {
+        ...common,
+        config: cfg
+      } as ResultSub<OyConfig>
+    }
+  })
 }
 
 

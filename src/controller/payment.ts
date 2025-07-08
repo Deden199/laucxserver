@@ -124,12 +124,42 @@ export const transactionCallback = async (req: Request, res: Response) => {
       amount: full.amount,
       method: full.method,
     })
+
+    // 2a) Ambil secretKey berdasar sub-merchant/merchant pada order
+    const orderCred = await prisma.order.findUnique({
+      where: { id: full.ref_id },
+      select: { subMerchantId: true, merchantId: true },
+    })
+    if (!orderCred) throw new Error(`Order ${full.ref_id} not found`)
+
+    let secretKey: string | null = null
+    if (orderCred.subMerchantId) {
+      const sub = await prisma.sub_merchant.findUnique({
+        where: { id: orderCred.subMerchantId },
+        select: { credentials: true },
+      })
+      if (sub?.credentials) {
+        const cred = sub.credentials as any
+        secretKey = cred.secretKey || null
+      }
+    } else if (orderCred.merchantId) {
+      const sub = await prisma.sub_merchant.findFirst({
+        where: { merchantId: orderCred.merchantId },
+        select: { credentials: true },
+      })
+      if (sub?.credentials) {
+        const cred = sub.credentials as any
+        secretKey = cred.secretKey || null
+      }
+    }
+    if (!secretKey) {
+      secretKey = config.api.hilogate.secretKey
+    }
+
     const expectedSig = crypto
       .createHash('md5')
-      .update(
-        '/api/v1/transactions' + minimalPayload + config.api.hilogate.secretKey,
-        'utf8'
-      )
+      .update('/api/v1/transactions' + minimalPayload + secretKey, 'utf8')
+
       .digest('hex')
     const gotSig = req.header('X-Signature') || req.header('x-signature') || ''
     logger.debug(`[Callback] gotSig=${gotSig} expected=${expectedSig}`)
@@ -316,9 +346,35 @@ export const oyTransactionCallback = async (req: Request, res: Response) => {
     const full = JSON.parse(rawBody) as any
     const orderId       = full.partner_trx_id
     const pgStatusRaw   = (full.payment_status || '').toUpperCase()
-const receivedAmt = full.receive_amount
-     const settlementSt  = full.settlement_status?.toUpperCase() || null
+    const receivedAmt   = full.receive_amount
+    const settlementSt  = full.settlement_status?.toUpperCase() || null
 
+    // 2a) Ambil kredensial OY per order untuk verifikasi
+    const ord = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: { subMerchantId: true, merchantId: true },
+    })
+    if (!ord) throw new Error('Order not found for callback')
+
+    let apiKey = ''
+    if (ord.subMerchantId) {
+      const sub = await prisma.sub_merchant.findUnique({
+        where: { id: ord.subMerchantId },
+        select: { credentials: true },
+      })
+      apiKey = (sub?.credentials as any)?.apiKey || ''
+    } else if (ord.merchantId) {
+      const sub = await prisma.sub_merchant.findFirst({
+        where: { merchantId: ord.merchantId },
+        select: { credentials: true },
+      })
+      apiKey = (sub?.credentials as any)?.apiKey || ''
+    }
+
+    const gotApiKey = req.header('x-api-key') || req.header('X-Api-Key')
+    if (apiKey && gotApiKey !== apiKey) {
+      throw new Error('Invalid OY signature')
+    }
     if (!orderId) throw new Error('Missing partner_trx_id')
     if (receivedAmt == null) throw new Error('Missing received_amount')
 

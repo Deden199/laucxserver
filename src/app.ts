@@ -68,6 +68,7 @@ app.post(
       (req as any).rawBody = buf.toString('utf8');      // simpan mentah
     },
   }),
+    express.json(),
   withdrawalCallback           // ⛔ TANPA express.json()
 );
 app.post(
