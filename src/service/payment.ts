@@ -86,27 +86,26 @@ export const createTransaction = async (
       throw new Error('Internal Hilogate merchant not found');
     }
 
-    // 2) Simpan transaction_request
+    // 2) Pilih sub-merchant aktif
+    const hilSubs = await getActiveProviders(merchantRec.id, 'hilogate');
+    if (!hilSubs.length) throw new Error('No active Hilogate credentials');
+    const sub      = hilSubs[0];
+    const hilCfg   = sub.config as HilogateConfig;
+    const hilClient = new HilogateClient(hilCfg);
+
+    // 3) Simpan transaction_request
     const trx = await prisma.transaction_request.create({
       data: {
-        merchantId: merchantRec.id,
-        subMerchantId: '',
-        buyerId: request.buyer,
-        playerId: pid,
+        merchantId:    merchantRec.id,
+        subMerchantId: sub.id,
+        buyerId:       request.buyer,
+        playerId:      pid,
         amount,
-        status: 'PENDING',
+        status:        'PENDING',
         settlementAmount: amount,
       },
     });
     const refId = trx.id;
-
-    // 3) Ambil kredensial aktif & instansiasi client
-const hilSubs = await getActiveProviders(merchantRec.id, 'hilogate');
-if (!hilSubs.length) throw new Error('No active Hilogate credentials');
-
-// ambil HilogateConfig dari properti `config`
-const hilCfg = hilSubs[0].config as HilogateConfig;
-const hilClient = new HilogateClient(hilCfg);
 
 // panggil transaksi
 const apiResp = await hilClient.createTransaction({
@@ -145,18 +144,19 @@ const qrString = apiResp.data?.qr_string ?? apiResp.qr_string;
     // 7) Simpan ke tabel order untuk dashboard client
     await prisma.order.create({
       data: {
-        id: refId,
-        userId: request.buyer,
-        merchantId: request.buyer,
+        id:            refId,
+        userId:        request.buyer,
+        merchantId:    request.buyer,
+        subMerchantId: sub.id,
         // connect relation to PartnerClient
         partnerClient: { connect: { id: request.buyer } },
-        playerId: pid,
+        playerId:      pid,
         amount,
-        channel: 'hilogate',
-        status: 'PENDING',
-        qrPayload: qrString,
+        channel:       'hilogate',
+        status:        'PENDING',
+        qrPayload:     qrString,
         checkoutUrl,
-        fee3rdParty: 0,
+        fee3rdParty:   0,
         settlementAmount: amount,
       },
     });
@@ -177,11 +177,17 @@ if (mName === 'oy') {
   const merchantRec = await prisma.merchant.findFirst({ where: { name: 'oy' } })
   if (!merchantRec) throw new Error('Internal OY merchant not found')
 
+  const oySubs = await getActiveProviders(merchantRec.id, 'oy');
+  if (!oySubs.length) throw new Error('No active OY credentials');
+  const sub    = oySubs[0];
+  const oyCfg  = sub.config as OyConfig;
+  const oyClient = new OyClient(oyCfg);
+
   // 1) Simpan request
   const trx = await prisma.transaction_request.create({
     data: {
       merchantId:      merchantRec.id,
-      subMerchantId:   '',
+      subMerchantId:   sub.id,
       buyerId:         request.buyer,
       playerId:        pid,
       amount,
@@ -192,12 +198,6 @@ if (mName === 'oy') {
   const refId = trx.id
 
   // 2) Panggil API OY
-const oySubs = await getActiveProviders(merchantRec.id, 'oy');
-if (!oySubs.length) throw new Error('No active OY credentials');
-
-// ambil config dari properti `config`, bukan `credentials`
-const oyCfg = oySubs[0].config as OyConfig;
-const oyClient = new OyClient(oyCfg);
 
 const qrResp = await oyClient.createQRISTransaction({
   partner_trx_id: refId,
@@ -226,6 +226,7 @@ const qrResp = await oyClient.createQRISTransaction({
       id:            refId,
       userId:        request.buyer,
       merchantId:    merchantRec.id,
+      subMerchantId: sub.id,
       partnerClient: { connect: { id: request.buyer } },
       playerId:      pid,
       amount,

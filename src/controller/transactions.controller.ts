@@ -39,19 +39,19 @@ export async function listTransactions (req: AuthRequest, res: Response) {
 /* ─────────── 2. Paksa-sync Hilogate ─────────── */
 export async function syncTransaction(req: AuthRequest, res: Response) {
   try {
-    // 1) Cari transaksi untuk dapatkan merchantId
+    // 1) Cari transaksi untuk dapatkan subMerchantId
     const tx = await prisma.transaction_request.findUnique({
       where: { id: req.params.ref_id },
-      select: { merchantId: true },
+      select: { subMerchantId: true },
     });
     if (!tx) {
       return res.status(404).json({ message: 'Transaction not found' });
     }
 
-    // 2) Panggil service dengan refId + merchantId
+    // 2) Panggil service dengan refId + subMerchantId
     const updated = await syncWithHilogate(
       req.params.ref_id,
-      tx.merchantId
+      tx.subMerchantId
     );
 
     return res.json({ success: true, updated });

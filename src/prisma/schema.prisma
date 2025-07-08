@@ -186,6 +186,7 @@ model Order {
   userId           String
   playerId         String?
   merchantId       String?
+  subMerchantId    String?
   amount           Float
   channel          String
   settlementStatus String?
