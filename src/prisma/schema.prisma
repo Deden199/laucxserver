@@ -245,6 +245,7 @@ model PartnerUser {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   logs      AdminLog[]
+  settlementBatchRuns SettlementBatchRun[]
 
 }
 
@@ -356,6 +357,19 @@ model AdminLog {
   target    String?
   detail    Json?
   createdAt DateTime @default(now())
+
+  admin PartnerUser @relation(fields: [adminId], references: [id])
+}
+
+model SettlementBatchRun {
+  id           String   @id @default(uuid()) @map("_id")
+  adminId      String
+  startedAt    DateTime @default(now())
+  endedAt      DateTime?
+  settledCount Int?
+  netAmount    Float?
+  status       String
+  error        String?
 
   admin PartnerUser @relation(fields: [adminId], references: [id])
 }

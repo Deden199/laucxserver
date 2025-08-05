@@ -237,7 +237,7 @@ const where: any = {
 }
 
 // safe runner: process up to a single batch
-async function processBatchLoop(): Promise<{ settledCount: number; netAmount: number }> {
+export async function processBatchLoop(): Promise<{ settledCount: number; netAmount: number }> {
   const { settledCount, netAmount } = await processBatchOnce();
   return { settledCount, netAmount };
 }
