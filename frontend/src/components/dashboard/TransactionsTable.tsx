@@ -49,6 +49,7 @@ export default function TransactionsTable({
           onChange={e => setSearch(e.target.value)}
         />
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <option value="SUCCESS">SUCCESS</option>
           <option value="PAID">PAID</option>
           <option value="PENDING">PENDING</option>
           <option value="EXPIRED">EXPIRED</option>
