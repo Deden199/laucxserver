@@ -13,6 +13,8 @@ import {
   Clock,
   ListChecks,
   FileText,
+  Coins,
+  Calculator,
 } from 'lucide-react'
 
 type RawStatus = '' | 'SUCCESS' | 'DONE' | 'SETTLED' | 'PAID' | 'PENDING' | 'EXPIRED'
@@ -44,12 +46,14 @@ export default function ClientDashboardPage() {
   const [startDate, endDate]     = dateRange
 
   // Summary
-  const [balance, setBalance]                 = useState(0)
-  const [totalPend, setTotalPend]             = useState(0)
-  const [totalTrans, setTotalTrans]           = useState(0) // from backend (count)
-    const [totalSettlement, setTotalSettlement] = useState(0)
-  const [totalPaid, setTotalPaid]             = useState(0)
-  const [exporting, setExporting]             = useState(false)
+  const [balance, setBalance]             = useState(0)
+  const [totalPend, setTotalPend]         = useState(0)
+  const [totalTrans, setTotalTrans]       = useState(0) // from backend (count)
+  const [totalSettlement, setTotalSettlement] = useState(0)
+  const [totalPaid, setTotalPaid]         = useState(0)
+  const [totalFee, setTotalFee]           = useState(0)
+  const [totalNet, setTotalNet]           = useState(0)
+  const [exporting, setExporting]         = useState(false)
   // Transactions
   const [txs, setTxs]                         = useState<Tx[]>([])
   const [page, setPage]                       = useState(1)
@@ -141,6 +145,8 @@ export default function ClientDashboardPage() {
         totalCount: number
         totalSettlement?: number
         totalPaid?: number
+        totalFee?: number
+        totalNetAmount?: number
         children: ClientOption[]
       }>('/client/dashboard', { params: buildParams() })
 
@@ -148,6 +154,8 @@ export default function ClientDashboardPage() {
       setTotalPend(data.totalPending)
       setTotalSettlement(data.totalSettlement || 0)
       setTotalPaid(data.totalPaid || 0)
+      setTotalFee(data.totalFee || 0)
+      setTotalNet(data.totalNetAmount || 0)
       setChildren(data.children)
       setTotalTrans(data.totalCount)
     } catch {
@@ -284,27 +292,33 @@ try {
           <div className={styles.card}>
             <ListChecks className={styles.cardIcon} />
             <h2>Transactions</h2>
-                        <p>{totalTrans.toLocaleString()}</p>
+            <p>{totalTrans.toLocaleString()}</p>
+          </div>
+          <div className={styles.card}>
+            <Wallet className={styles.cardIcon} />
+            <h2>Total PAID</h2>
+            <p>{totalPaid.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}</p>
+          </div>
+          <div className={styles.card}>
+            <Coins className={styles.cardIcon} />
+            <h2>Total fee Launcx</h2>
+            <p>{totalFee.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}</p>
+          </div>
+          <div className={`${styles.card} ${styles.settledBalance}`}>
+            <Calculator className={styles.cardIcon} />
+            <h2>Total Net Amount</h2>
+            <p>{totalNet.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}</p>
           </div>
           <div className={`${styles.card} ${styles.pendingBalance}`}>
             <Clock className={styles.cardIcon} />
             <h2>Pending Settlement</h2>
-                        <p>{totalPend.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}</p>
+            <p>{totalPend.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}</p>
           </div>
-                    <div className={`${styles.card} ${styles.paidBalance}`}>
+          <div className={`${styles.card} ${styles.paidBalance}`}>
             <Wallet className={styles.cardIcon} />
             <h2>Total Settlement</h2>
             <p>{totalSettlement.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}</p>
           </div>
-{/* <div className={`${styles.card} ${styles.paidBalance}`}>
-  <Wallet className={styles.cardIcon} />
-  <div style={{ display: 'flex', flexDirection: 'column' }}>
-    <h2 style={{ margin: 0 }}>Total Paid</h2>
-    <small style={{ fontSize: 12, color: '#666' }}>after fee</small>
-  </div>
-  <p>{totalPaid.toLocaleString('id-ID',{ style:'currency', currency:'IDR' })}</p>
-</div> */}
-
         </section>
       </aside>
 
