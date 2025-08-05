@@ -9,8 +9,8 @@ import 'react-datepicker/dist/react-datepicker.css'
 interface TransactionsTableProps {
   search: string
   setSearch: Dispatch<SetStateAction<string>>
-  statusFilter: string
-  setStatusFilter: Dispatch<SetStateAction<string>>
+  statusFilter: Tx['status'] | ''
+  setStatusFilter: Dispatch<SetStateAction<Tx['status'] | ''>>
   loadingTx: boolean
   txs: Tx[]
   perPage: number

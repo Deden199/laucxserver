@@ -53,7 +53,7 @@ const AdminClientDashboard = () => {
   const [range, setRange] = useState<'today' | 'week' | 'custom'>('today')
   const [from, setFrom] = useState(() => toJakartaDate(new Date()))
   const [to, setTo] = useState(() => toJakartaDate(new Date()))
-  const [statusFilter, setStatusFilter] = useState('PAID')
+  const [statusFilter, setStatusFilter] = useState<Tx['status'] | ''>('PAID')
 
   const [search, setSearch] = useState('')
 

@@ -111,7 +111,7 @@ const [error, setError] = useState('')
     const [from, setFrom]   = useState(() => toJakartaDate(new Date()))
   const [to, setTo]       = useState(() => toJakartaDate(new Date()))
   const [search, setSearch] = useState('')
-const [statusFilter, setStatusFilter] = useState<'SUCCESS' | 'PAID' | string>('PAID')
+const [statusFilter, setStatusFilter] = useState<Tx['status'] | ''>('PAID')
 const [withdrawStatusFilter, setWithdrawStatusFilter] = useState('')
 
 
