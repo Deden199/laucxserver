@@ -53,7 +53,7 @@ const AdminClientDashboard = () => {
   const [range, setRange] = useState<'today' | 'week' | 'custom'>('today')
   const [from, setFrom] = useState(() => toJakartaDate(new Date()))
   const [to, setTo] = useState(() => toJakartaDate(new Date()))
-  const [statusFilter, setStatusFilter] = useState('PAID')
+  const [statusFilter, setStatusFilter] = useState<Tx['status'] | ''>('PAID')
 
   const [search, setSearch] = useState('')
 
@@ -82,7 +82,11 @@ const AdminClientDashboard = () => {
       params.date_from = sJak.toISOString()
       params.date_to = eJak.toISOString()
     }
-    if (statusFilter) params.status = statusFilter
+    if (statusFilter)
+      params.status =
+        statusFilter === 'SUCCESS'
+          ? ['SUCCESS', 'DONE', 'SETTLED']
+          : statusFilter
     if (selectedChild !== 'all') params.clientId = selectedChild
     return params
   }
@@ -113,8 +117,18 @@ const AdminClientDashboard = () => {
         `/admin/clients/${clientId}/dashboard`,
         { params: buildParams() }
       )
-      setTxs(data.transactions)
-      setTotalTrans(data.transactions.length)
+      const normalized = data.transactions.map(t => {
+        const raw = (t.status as string) || ''
+        return {
+          ...t,
+          status:
+            raw === 'DONE' || raw === 'SETTLED'
+              ? 'SUCCESS'
+              : (raw as Tx['status'])
+        }
+      })
+      setTxs(normalized)
+      setTotalTrans(normalized.length)
     } catch {
       router.push('/login')
     } finally {

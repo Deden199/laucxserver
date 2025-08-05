@@ -111,7 +111,7 @@ const [error, setError] = useState('')
     const [from, setFrom]   = useState(() => toJakartaDate(new Date()))
   const [to, setTo]       = useState(() => toJakartaDate(new Date()))
   const [search, setSearch] = useState('')
-const [statusFilter, setStatusFilter] = useState<'SUCCESS' | 'PAID' | string>('PAID')
+const [statusFilter, setStatusFilter] = useState<Tx['status'] | ''>('PAID')
 const [withdrawStatusFilter, setWithdrawStatusFilter] = useState('')
 
 
@@ -229,8 +229,11 @@ function buildParams() {
   if (selectedMerchant !== 'all') {
     p.partnerClientId = selectedMerchant
   }
-    if (statusFilter !== 'all') {
-    p.status = statusFilter
+  if (statusFilter !== 'all') {
+    p.status =
+      statusFilter === 'SUCCESS'
+        ? ['SUCCESS', 'DONE', 'SETTLED']
+        : statusFilter
   }
   if (search.trim()) {
     p.search = search.trim()
@@ -465,12 +468,19 @@ const VALID_STATUSES: Tx['status'][] = [
 
 const mapped: Tx[] = data.transactions.map(o => {
   const raw = o.status ?? '';
+  let statusTyped: Tx['status'];
 
+  // DONE dan SETTLED dianggap sebagai SUCCESS di UI
+  if (raw === 'DONE' || raw === 'SETTLED') {
+    statusTyped = 'SUCCESS';
+  }
   // Jika status dari server cocok dengan salah satu VALID_STATUSES, pakai itu,
   // jika tidak, fallback ke '' (kosong)
-  const statusTyped: Tx['status'] = VALID_STATUSES.includes(raw as Tx['status'])
-    ? (raw as Tx['status'])
-    : '';
+  else if (VALID_STATUSES.includes(raw as Tx['status'])) {
+    statusTyped = raw as Tx['status'];
+  } else {
+    statusTyped = '';
+  }
 
   return {
     id:                 o.id,

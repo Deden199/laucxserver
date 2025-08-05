@@ -51,13 +51,20 @@ export default function TransactionsTable({
             setSearch(e.target.value)
           }}
         />
-        <select
-          value={statusFilter}
-          onChange={e => {
-            setPage(1)
-            setStatusFilter(e.target.value)
-          }}
-        >
+<select
+  value={statusFilter}
+  onChange={e => {
+    setPage(1);
+    setStatusFilter(e.target.value);
+  }}
+>
+  <option value="SUCCESS">SUCCESS</option>
+  <option value="PAID">PAID</option>
+  <option value="PENDING">PENDING</option>
+  <option value="FAILED">FAILED</option>
+  {/* …other options */}
+</select>
+
           <option value="PAID">PAID</option>
           <option value="PENDING">PENDING</option>
           <option value="EXPIRED">EXPIRED</option>
