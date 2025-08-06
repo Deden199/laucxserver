@@ -7,11 +7,12 @@ import { ClientAuthRequest } from '../middleware/clientAuth'
 import ExcelJS from 'exceljs'
 import crypto from 'crypto';
 import axios from 'axios';
-import { formatDateJakarta } from '../util/time';
+import { formatDateJakarta, wibTimestampString } from '../util/time';
 import pLimit from 'p-limit' // optional kalau mau throttle paralel, tapi tidak diperlukan
 
 import { retry } from '../utils/retry';
 import { CALLBACK_ALLOWED_STATUSES, isCallbackStatusAllowed } from '../utils/callbackStatus';
+import logger from '../logger';
 
 const DASHBOARD_STATUSES = [
   'SUCCESS',
@@ -460,6 +461,7 @@ export async function retryTransactionCallback(
       partnerClientId: true,
       amount: true,
       feeLauncx: true,
+      pendingAmount: true,
       qrPayload: true,
       status: true,            // ← ambil status final
       settlementStatus: true   // ← ambil settlementStatus final
@@ -488,32 +490,40 @@ export async function retryTransactionCallback(
     return res.status(400).json({ error: 'Callback belum diset' });
   }
 
-  // Ambil CallbackJob terbaru untuk order ini
-  const jobs = await prisma.callbackJob.findMany({
-    where: { delivered: false },
-    orderBy: { createdAt: 'desc' },
-  })
-  const job = jobs.find(j => (j.payload as any)?.orderId === orderId)
-  if (!job) {
-    return res.status(404).json({ error: 'Callback job tidak ditemukan' })
-  }
+  // 4) Bangun ulang payload callback
+  const timestamp = wibTimestampString();
+  const nonce = crypto.randomUUID();
+  const clientPayload = {
+    orderId,
+    status: order.status,
+    settlementStatus: order.settlementStatus,
+    grossAmount: order.amount,
+    feeLauncx: order.feeLauncx,
+    netAmount: order.pendingAmount,
+    qrPayload: order.qrPayload,
+    timestamp,
+    nonce,
+  };
 
-  // 4) Gunakan payload dari CallbackJob
-  const clientPayload = job.payload as any
-
-  // 5) Sign dan kirim ulang
-  const sig = job.signature
-  const url = job.url
+  // 5) Sign dan kirim ulang langsung
+  const sig = crypto
+    .createHmac('sha256', partner.callbackSecret)
+    .update(JSON.stringify(clientPayload))
+    .digest('hex');
 
   try {
     await retry(() =>
-      axios.post(url, clientPayload, {
+      axios.post(partner.callbackUrl!, clientPayload, {
         headers: { 'X-Callback-Signature': sig },
-        timeout: 5000
+        timeout: 5000,
       })
     );
+    logger.info(`retryTransactionCallback delivered for order ${orderId}`);
     return res.json({ success: true });
   } catch (err: any) {
+    logger.warn(
+      `retryTransactionCallback failed for order ${orderId}: ${err.message}`
+    );
     return res
       .status(500)
       .json({ error: err.message || 'Gagal mengirim callback' });
