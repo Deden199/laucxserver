@@ -200,6 +200,20 @@ if (statuses.length === 0) statuses = [...allowed];
     })
     const totalSettlement = settleAgg._sum.settlementAmount ?? 0
 
+    // total fee platform untuk transaksi berhasil & paid
+    const feeAgg = await prisma.order.aggregate({
+      _sum: { feeLauncx: true },
+      where: {
+        partnerClientId: { in: clientIds },
+        status: { in: ['PAID', 'SUCCESS', 'DONE', 'SETTLED'] },
+        ...(dateFrom || dateTo ? { createdAt: createdAtFilter } : {})
+      }
+    })
+    const totalFee = feeAgg._sum.feeLauncx ?? 0
+
+    // total net amount (pending + settled)
+    const totalNetAmount = totalPending + totalSettlement
+
     // (4b) HITUNG TOTAL ACTIVE BALANCE BERDASARKAN clientIds
     const parentBal = clientIds.includes(pc.id) ? pc.balance ?? 0 : 0;
     const childrenBal = pc.children
@@ -283,6 +297,8 @@ return res.json({
   totalCount,       // baru: jumlah transaksi (dipakai di summary)
   totalSettlement,
   totalPaid,
+  totalFee,
+  totalNetAmount,
   // backward compatibility jika frontend lama masih pakai:
   totalTransaksi: totalCount, // kalau summary mau count, biarkan ini jadi count
   total: totalCount,          // pagination logic masih bisa pakai ini

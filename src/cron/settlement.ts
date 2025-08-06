@@ -47,6 +47,53 @@ async function retryTx(fn: () => Promise<any>, attempts = 5, baseDelayMs = 100) 
   throw lastErr;
 }
 
+// Manual trigger: run settlement batches and report progress via callback
+export async function runSettlementManual(
+  onBatch?: (info: {
+    batch: number
+    total: number
+    settledCount: number
+    batchNet: number
+    settledOrders: number
+    netAmount: number
+  }) => void
+) {
+  // Process orders up to current time
+  cutoffTime = new Date()
+  const total = await prisma.order.count({
+    where: {
+      status: 'PAID',
+      partnerClientId: { not: null },
+      createdAt: { lte: cutoffTime }
+    }
+  })
+  const iterations = Math.ceil(total / BATCH_SIZE)
+
+  // reset cursor before loop
+  lastCreatedAt = null
+  lastId = null
+
+  let settledOrders = 0
+  let netAmount = 0
+
+  for (let i = 0; i < iterations; i++) {
+    const { settledCount, netAmount: na } = await processBatchOnce()
+    if (!settledCount) break
+    settledOrders += settledCount
+    netAmount += na
+    onBatch?.({
+      batch: i + 1,
+      total: iterations,
+      settledCount,
+      batchNet: na,
+      settledOrders,
+      netAmount
+    })
+  }
+
+  return { settledOrders, netAmount, totalBatches: iterations }
+}
+
 // signature helper
 function generateSignature(path: string, secretKey: string): string {
   return crypto
