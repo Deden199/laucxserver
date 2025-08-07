@@ -520,37 +520,18 @@ export const requestWithdraw = async (req: ClientAuthRequest, res: Response) => 
         select: { withdrawFeePercent: true, withdrawFeeFlat: true }
       })
 
-      // b) Hitung total masuk (settled) dari transaction_request
-  const inAgg = await tx.order.aggregate({
-    _sum: { settlementAmount: true },
-    where: {
-      subMerchantId,
-      partnerClientId,
-      settlementTime: { not: null }
-    }
-  })
-      const totalIn = inAgg._sum.settlementAmount ?? 0
-
-      // c) Hitung total keluar (withdraw) dari WithdrawRequest
-      const outAgg = await tx.withdrawRequest.aggregate({
-        _sum: { amount: true },
-        where: {
-          subMerchantId,
-          partnerClientId,
-          status: { in: [DisbursementStatus.PENDING, DisbursementStatus.COMPLETED] }
-        }
-      })
-      const totalOut = outAgg._sum.amount ?? 0
-
-      // d) Validasi available balance
-      const available = totalIn - totalOut
-      if (amount > available) throw new Error('InsufficientBalance')
-
-      // e) Hitung fee dan net amount
+      // b) Hitung fee dan net amount
       const feePctAmt = (pc.withdrawFeePercent / 100) * amount
       const netAmt = amount - feePctAmt - pc.withdrawFeeFlat
 
-      // f) Buat WithdrawRequest dengan nested connect
+      // c) Deduct balance atomically to ensure no race condition allows negative balance
+      const { count } = await tx.partnerClient.updateMany({
+        where: { id: partnerClientId, balance: { gte: amount } },
+        data: { balance: { decrement: amount } },
+      })
+      if (count === 0) throw new Error('InsufficientBalance')
+
+      // d) Buat WithdrawRequest dengan nested connect
       const refId = `wd-${Date.now()}`
       const w = await tx.withdrawRequest.create({
         data: {
@@ -569,12 +550,6 @@ export const requestWithdraw = async (req: ClientAuthRequest, res: Response) => 
           bankCode:         bank_code,
           bankName
         }
-      })
-
-      // g) Hold saldo di PartnerClient
-      await tx.partnerClient.update({
-        where: { id: partnerClientId },
-        data: { balance: { decrement: amount } }
       })
 
       return w

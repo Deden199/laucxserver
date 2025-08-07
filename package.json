@@ -10,7 +10,7 @@
     "start": "node dist/app.js",
     "dev": "ts-node src/app.ts",
     "callback-worker": "ts-node src/worker/callbackQueue.ts",
-    "test": "node --test -r ts-node/register test/**/*.test.ts"
+    "test": "node --test -r ts-node/register/transpile-only -r ./test/setup.ts test/**/*.test.ts"
   },
   "author": "",
   "license": "ISC",
