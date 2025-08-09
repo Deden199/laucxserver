@@ -81,6 +81,7 @@ export async function buildSummaryMessage(): Promise<string[]> {
   const groupMessages: string[] = []
 
   for (const parent of groups) {
+    if (parent.children.length === 0) continue
     const ids = [parent.id, ...parent.children.map(c => c.id)]
 
     const gTpvAgg = await prisma.order.aggregate({
