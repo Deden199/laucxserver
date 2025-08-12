@@ -440,6 +440,8 @@ export async function processHilogatePayload(payload: {
   rrn?: string;
   detail?: { rrn?: string };
   paymentReceivedTime?: Date;
+  settlementTime?: Date;
+  trxExpirationTime?: Date;
 }) {
   const {
     ref_id: orderId,
@@ -451,6 +453,8 @@ export async function processHilogatePayload(payload: {
     rrn,
     detail,
     paymentReceivedTime,
+    settlementTime,
+    trxExpirationTime,
   } = payload;
   const rrnVal = rrn ?? detail?.rrn ?? null;
 
@@ -508,6 +512,9 @@ export async function processHilogatePayload(payload: {
       settlementAmount: isSuccess ? null       : net_amount,
       qrPayload:        qr_string ?? null,
       rrn:              rrnVal,
+      paymentReceivedTime,
+      settlementTime,
+      trxExpirationTime,
       updatedAt:        new Date(),
     }
   });

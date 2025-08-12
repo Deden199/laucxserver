@@ -26,6 +26,18 @@ async function resendCallback(refId: string, cfg: HilogateConfig) {
         : data?.updated_at?.value
         ? new Date(data.updated_at.value)
         : wibTimestamp();
+    const settlementTime =
+      data?.settlement_time
+        ? new Date(data.settlement_time)
+        : data?.updated_at?.value
+        ? new Date(data.updated_at.value)
+        : undefined;
+    const trxExpirationTime =
+      data?.trx_expiration_time
+        ? new Date(data.trx_expiration_time)
+        : data?.expired_at
+        ? new Date(data.expired_at)
+        : undefined;
     await processHilogatePayload({
       ref_id: data.ref_id,
       amount: data.amount,
@@ -35,6 +47,8 @@ async function resendCallback(refId: string, cfg: HilogateConfig) {
       qr_string: data.qr_string,
       settlement_status: data.settlement_status,
       paymentReceivedTime,
+      settlementTime,
+      trxExpirationTime,
     });
     logger.info(`[hilogateFallback] resend processed for ${refId}`);
   } catch (err: any) {
