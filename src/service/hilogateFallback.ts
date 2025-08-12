@@ -3,6 +3,7 @@ import logger from '../logger';
 import { HilogateClient, HilogateConfig } from './hilogateClient';
 import { processHilogatePayload } from './payment';
 import moment from 'moment-timezone';
+import { wibTimestamp } from '../util/time';
 
 const FINAL_STATUSES = ['SUCCESS', 'EXPIRED', 'FAILED', 'COMPLETED'];
 
@@ -19,6 +20,12 @@ async function resendCallback(refId: string, cfg: HilogateConfig) {
     const client = new HilogateClient(cfg);
     const resp = await client.getTransaction(refId);
     const data = resp.data ?? resp;
+    const paymentReceivedTime =
+      data?.payment_received_time
+        ? new Date(data.payment_received_time)
+        : data?.updated_at?.value
+        ? new Date(data.updated_at.value)
+        : wibTimestamp();
     await processHilogatePayload({
       ref_id: data.ref_id,
       amount: data.amount,
@@ -27,6 +34,7 @@ async function resendCallback(refId: string, cfg: HilogateConfig) {
       net_amount: data.net_amount ?? data.settlement_amount,
       qr_string: data.qr_string,
       settlement_status: data.settlement_status,
+      paymentReceivedTime,
     });
     logger.info(`[hilogateFallback] resend processed for ${refId}`);
   } catch (err: any) {

@@ -439,6 +439,7 @@ export async function processHilogatePayload(payload: {
   settlement_status?: string;
   rrn?: string;
   detail?: { rrn?: string };
+  paymentReceivedTime?: Date;
 }) {
   const {
     ref_id: orderId,
@@ -448,7 +449,8 @@ export async function processHilogatePayload(payload: {
     qr_string,
     settlement_status,
     rrn,
-    detail
+    detail,
+    paymentReceivedTime,
   } = payload;
   const rrnVal = rrn ?? detail?.rrn ?? null;
 
@@ -482,7 +484,7 @@ export async function processHilogatePayload(payload: {
       callbackSecret: true,
     },
   });
-  const weekend = isJakartaWeekend();
+  const weekend = isJakartaWeekend(paymentReceivedTime);
   const pctFee  = weekend ? pc?.weekendFeePercent ?? 0 : pc?.feePercent ?? 0;
   const flatFee = weekend ? pc?.weekendFeeFlat ?? 0 : pc?.feeFlat ?? 0;
   const grossDec = new Decimal(grossAmount);
