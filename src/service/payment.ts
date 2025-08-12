@@ -11,7 +11,9 @@ import { prisma } from '../core/prisma';
 import logger from '../logger';
 import { generateRandomId, getRandomNumber } from '../util/random';
 import { getCurrentDate } from '../util/util';
-import { wibTimestampString, wibTimestamp, formatDateJakarta } from '../util/time';
+import { wibTimestampString, wibTimestamp, formatDateJakarta, isJakartaWeekend } from '../util/time';
+
+import Decimal from 'decimal.js';
 
 import { sendTelegramMessage } from '../core/telegram.axios';
 import axios from 'axios';
@@ -435,6 +437,8 @@ export async function processHilogatePayload(payload: {
   net_amount: number;
   qr_string?: string;
   settlement_status?: string;
+  rrn?: string;
+  detail?: { rrn?: string };
 }) {
   const {
     ref_id: orderId,
@@ -442,8 +446,11 @@ export async function processHilogatePayload(payload: {
     status: pgStatus,
     net_amount,
     qr_string,
-    settlement_status
+    settlement_status,
+    rrn,
+    detail
   } = payload;
+  const rrnVal = rrn ?? detail?.rrn ?? null;
 
   // 1) Hit DB untuk ambil order & merchant
   const existing = await prisma.order.findUnique({
@@ -463,52 +470,74 @@ export async function processHilogatePayload(payload: {
   const newStatus = isSuccess ? 'PAID' : upStatus;
   const newSetSt  = settlement_status?.toUpperCase() ?? (isSuccess ? 'PENDING' : null);
 
+  // Ambil konfigurasi fee partner
+  const pc = await prisma.partnerClient.findUnique({
+    where: { id: existing.merchantId },
+    select: {
+      feePercent: true,
+      feeFlat: true,
+      weekendFeePercent: true,
+      weekendFeeFlat: true,
+      callbackUrl: true,
+      callbackSecret: true,
+    },
+  });
+  const weekend = isJakartaWeekend();
+  const pctFee  = weekend ? pc?.weekendFeePercent ?? 0 : pc?.feePercent ?? 0;
+  const flatFee = weekend ? pc?.weekendFeeFlat ?? 0 : pc?.feeFlat ?? 0;
+  const grossDec = new Decimal(grossAmount);
+  const rawFee = grossDec.times(pctFee).dividedBy(100);
+  const feeLauncxDec = rawFee
+    .toDecimalPlaces(3, Decimal.ROUND_HALF_UP)
+    .plus(new Decimal(flatFee));
+  const feeLauncxCalc = feeLauncxDec.toNumber();
+  const pendingNet = grossDec.minus(feeLauncxDec).toNumber();
+  const pgFee = grossAmount - net_amount;
+
   // 4) Update order di DB
   await prisma.order.update({
     where: { id: orderId },
     data: {
       status:           newStatus,
       settlementStatus: newSetSt,
-      pendingAmount:    isSuccess ? grossAmount : null,
+      feeLauncx:        isSuccess ? feeLauncxCalc : null,
+      fee3rdParty:      pgFee ?? 0,
+      pendingAmount:    isSuccess ? pendingNet : null,
       settlementAmount: isSuccess ? null       : net_amount,
       qrPayload:        qr_string ?? null,
+      rrn:              rrnVal,
       updatedAt:        new Date(),
     }
   });
 
   // 5) Forward ke partner jika sukses
-  if (isSuccess) {
-    const partner = await prisma.partnerClient.findUnique({
-      where: { id: existing.merchantId },
-      select: { callbackUrl: true, callbackSecret: true }
-    });
-      if (partner?.callbackUrl && partner.callbackSecret) {
-        const timestamp = wibTimestampString();
-      const nonce     = crypto.randomUUID();
-      const clientPayload = {
-        orderId,
-        status:           newStatus,
-        settlementStatus: newSetSt,
-        grossAmount:      existing.amount,
-        feeLauncx:        existing.feeLauncx,
-        netAmount:        grossAmount,
-        qrPayload:        qr_string,
-        timestamp,
-        nonce
-      };
-      const clientSig = crypto
-        .createHmac('sha256', partner.callbackSecret)
-        .update(JSON.stringify(clientPayload))
-        .digest('hex');
-      try {
-        await postWithRetry(partner.callbackUrl, clientPayload, {
-          headers: { 'X-Callback-Signature': clientSig },
-          timeout: 5000,
-        });
-        logger.info('[Callback] Forwarded to client');
-      } catch (err) {
-        logger.error('[Callback] Forward failed', err);
-      }
+  if (isSuccess && pc?.callbackUrl && pc.callbackSecret) {
+    const timestamp = wibTimestampString();
+    const nonce     = crypto.randomUUID();
+    const clientPayload = {
+      orderId,
+      status:           newStatus,
+      settlementStatus: newSetSt,
+      grossAmount:      existing.amount,
+      feeLauncx:        feeLauncxCalc,
+      netAmount:        pendingNet,
+      qrPayload:        qr_string,
+      rrn:              rrnVal ?? undefined,
+      timestamp,
+      nonce,
+    };
+    const clientSig = crypto
+      .createHmac('sha256', pc.callbackSecret)
+      .update(JSON.stringify(clientPayload))
+      .digest('hex');
+    try {
+      await postWithRetry(pc.callbackUrl, clientPayload, {
+        headers: { 'X-Callback-Signature': clientSig },
+        timeout: 5000,
+      });
+      logger.info('[Callback] Forwarded to client');
+    } catch (err) {
+      logger.error('[Callback] Forward failed', err);
     }
   }
 }
