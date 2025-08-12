@@ -4,7 +4,6 @@ import type { Bitmap } from 'jimp';
 
 import QrCode from 'qrcode-reader'
 const Jimp = require('jimp')
-import { postWithRetry } from '../utils/postWithRetry';
 
 import { brevoAxiosInstance } from '../core/brevo.axios';
 import { prisma } from '../core/prisma';
@@ -521,7 +520,7 @@ export async function processHilogatePayload(payload: {
     }
   });
 
-  // 5) Forward ke partner jika sukses
+  // 5) Enqueue callback job jika sukses
   if (isSuccess && pc?.callbackUrl && pc.callbackSecret) {
     const timestamp = wibTimestampString();
     const nonce     = crypto.randomUUID();
@@ -533,7 +532,6 @@ export async function processHilogatePayload(payload: {
       feeLauncx:        feeLauncxCalc,
       netAmount:        pendingNet,
       qrPayload:        qr_string,
-      rrn:              rrnVal ?? undefined,
       timestamp,
       nonce,
     };
@@ -541,15 +539,14 @@ export async function processHilogatePayload(payload: {
       .createHmac('sha256', pc.callbackSecret)
       .update(JSON.stringify(clientPayload))
       .digest('hex');
-    try {
-      await postWithRetry(pc.callbackUrl, clientPayload, {
-        headers: { 'X-Callback-Signature': clientSig },
-        timeout: 5000,
-      });
-      logger.info('[Callback] Forwarded to client');
-    } catch (err) {
-      logger.error('[Callback] Forward failed', err);
-    }
+    await prisma.callbackJob.create({
+      data: {
+        url:       pc.callbackUrl,
+        payload:   clientPayload,
+        signature: clientSig,
+      },
+    });
+    logger.info('[Callback] Enqueued transaction callback');
   }
 }
 
