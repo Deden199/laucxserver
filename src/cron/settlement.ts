@@ -8,6 +8,8 @@ import { config } from '../config'
 import crypto from 'crypto'
 import logger from '../logger'
 import { sendTelegramMessage } from '../core/telegram.axios'
+import { formatIdr } from '../util/currency'
+import { formatDateJakarta } from '../util/time'
 
 // ————————— CONFIG —————————
 const BATCH_SIZE = 1000                          // jumlah order PAID diproses per batch
@@ -284,10 +286,29 @@ async function runSettlementJob() {
     await new Promise(r => setTimeout(r, 500));
   }
 
+  const { _count: failedOrders, _sum } = await prisma.order.aggregate({
+    where: {
+      status: 'PAID',
+      partnerClientId: { not: null },
+      createdAt: { lte: cutoffTime }
+    },
+    _count: true,
+    _sum: { pendingAmount: true }
+  });
+  const failedAmount = _sum.pendingAmount ?? 0;
+
+  const lines = [
+    `[Settlement Summary] ${formatDateJakarta(new Date())}`,
+    `Success: ${formatIdr(netAmount)} (count: ${settledOrders})`,
+    `Failed : ${formatIdr(failedAmount)} (count: ${failedOrders})`
+  ];
+  const summary = ['```', ...lines, '```'].join('\n');
+
   try {
     await sendTelegramMessage(
       config.api.telegram.adminChannel,
-      `[SettlementCron] Summary: iterations ${ranIterations}, settled ${settledOrders} orders, net amount ${netAmount}`
+      summary,
+      'Markdown'
     );
   } catch (err) {
     logger.error('[SettlementCron] Failed to send Telegram summary:', err);

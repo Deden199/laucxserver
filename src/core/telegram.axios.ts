@@ -16,11 +16,16 @@ const telegramAxiosInstance = axios.create({
 });
 
 // Function to send a message
-const sendTelegramMessage = async (chatId : string, text : string) => {
+const sendTelegramMessage = async (
+    chatId: string,
+    text: string,
+    parseMode?: string
+) => {
     try {
         const response = await telegramAxiosInstance.post('/sendMessage', {
             chat_id: chatId,
-            text: text,
+            text,
+            ...(parseMode && { parse_mode: parseMode }),
         });
         return response.data;
     } catch (error) {
