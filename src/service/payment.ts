@@ -435,6 +435,7 @@ export async function processHilogatePayload(payload: {
   method: string;
   status: string;
   net_amount: number;
+  total_fee?: number;
   qr_string?: string;
   settlement_status?: string;
   rrn?: string;
@@ -448,6 +449,7 @@ export async function processHilogatePayload(payload: {
     amount: grossAmount,
     status: pgStatus,
     net_amount,
+    total_fee,
     qr_string,
     settlement_status,
     rrn,
@@ -498,7 +500,7 @@ export async function processHilogatePayload(payload: {
     .plus(new Decimal(flatFee));
   const feeLauncxCalc = feeLauncxDec.toNumber();
   const pendingNet = grossDec.minus(feeLauncxDec).toNumber();
-  const pgFee = grossAmount - net_amount;
+  const pgFee = total_fee ?? (grossAmount - net_amount);
 
   // 4) Update order di DB
   await prisma.order.update({
