@@ -71,3 +71,10 @@ Admins can also trigger a balance recomputation from the web panel:
 2. Click **Reconcile Balance** inside the *Active Balance* card.
 3. The server recalculates the balance from settled orders minus withdrawals and the card refreshes with the new value.
 
+## Settlement Cron Setting
+
+The `settlement_cron` key in the `Setting` table controls when the settlement
+job runs. It accepts a standard cron expression evaluated in the
+`Asia/Jakarta` timezone. The default expression is `0 16 * * *` (every day at
+16:00 WIB).
+

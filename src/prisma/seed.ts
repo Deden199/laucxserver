@@ -22,6 +22,13 @@ async function main() {
     }
   });
   console.log('✅ Admin ready: admin@launcx.com / supersecret');
+
+  await prisma.setting.upsert({
+    where: { key: 'settlement_cron' },
+    update: { value: '0 16 * * *' },
+    create: { key: 'settlement_cron', value: '0 16 * * *' }
+  });
+  console.log('✅ Default settlement_cron set to 0 16 * * *');
 }
 
 main()
