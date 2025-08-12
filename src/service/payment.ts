@@ -500,7 +500,7 @@ export async function processHilogatePayload(payload: {
     .plus(new Decimal(flatFee));
   const feeLauncxCalc = feeLauncxDec.toNumber();
   const pendingNet = grossDec.minus(feeLauncxDec).toNumber();
-  const pgFee = total_fee ?? (grossAmount - net_amount);
+  const pgFee = total_fee;
 
   // 4) Update order di DB
   await prisma.order.update({
@@ -509,15 +509,15 @@ export async function processHilogatePayload(payload: {
       status:           newStatus,
       settlementStatus: newSetSt,
       feeLauncx:        isSuccess ? feeLauncxCalc : null,
-      fee3rdParty:      pgFee ?? 0,
+      fee3rdParty:      pgFee,
       pendingAmount:    isSuccess ? pendingNet : null,
-      settlementAmount: isSuccess ? null       : net_amount,
+      settlementAmount: null,
       qrPayload:        qr_string ?? null,
       rrn:              rrnVal,
       paymentReceivedTime,
       settlementTime,
       trxExpirationTime,
-      updatedAt:        new Date(),
+      updatedAt:        wibTimestamp(),
     }
   });
 
