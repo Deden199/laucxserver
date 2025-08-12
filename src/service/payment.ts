@@ -589,7 +589,7 @@ export const transactionCallback = async (request: Request) => {
           `Amount       : ${body.data.amount}`,
           `Status       : ${body.data.status}`,
         ].join('\n');
-        await sendTelegramMessage(merch.telegram, msg);
+        await sendTelegramMessage(merch.telegram, msg, 'Markdown');
       }
       if (merch?.email) {
         await brevoAxiosInstance.post('', {

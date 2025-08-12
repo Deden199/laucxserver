@@ -31,7 +31,11 @@ async function executeHourlyEvent() {
         const secondText = `Does the list contain today's file (${todayFileName})? ${containsTodayFile}`;
 
         const message = `${firstText}\n\n${secondText}`
-        await sendTelegramMessage(getNestedValue(config, 'api.telegram.adminChannel'), message);
+        await sendTelegramMessage(
+            getNestedValue(config, 'api.telegram.adminChannel'),
+            message,
+            'Markdown'
+        );
         console.log(message);
 
     } catch (error) {

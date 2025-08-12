@@ -254,7 +254,8 @@ async function runSettlementJob() {
   try {
     await sendTelegramMessage(
       config.api.telegram.adminChannel,
-      `[SettlementCron] Starting settlement check at ${cutoffTime.toISOString()}`
+      `[SettlementCron] Starting settlement check at ${cutoffTime.toISOString()}`,
+      'Markdown'
     );
   } catch (err) {
     logger.error('[SettlementCron] Failed to send Telegram notification:', err);

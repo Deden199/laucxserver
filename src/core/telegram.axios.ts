@@ -19,13 +19,13 @@ const telegramAxiosInstance = axios.create({
 const sendTelegramMessage = async (
     chatId: string,
     text: string,
-    parseMode?: string
+    parseMode: string = 'Markdown'
 ) => {
     try {
         const response = await telegramAxiosInstance.post('/sendMessage', {
             chat_id: chatId,
             text,
-            ...(parseMode && { parse_mode: parseMode }),
+            parse_mode: parseMode,
         });
         return response.data;
     } catch (error) {
@@ -34,4 +34,4 @@ const sendTelegramMessage = async (
     }
 };
 
-export { telegramAxiosInstance, sendTelegramMessage};
+export { telegramAxiosInstance, sendTelegramMessage };
