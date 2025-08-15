@@ -1,7 +1,7 @@
 // src/controllers/users.controller.ts
 import { Response } from 'express'
 import { prisma } from '../core/prisma'
-import { hashPassword } from '../util/password'
+import { hashPassword } from '../../shared/core/password'
 import { AuthRequest } from '../middleware/auth'
 import { logAdminAction } from '../util/adminLog'
 

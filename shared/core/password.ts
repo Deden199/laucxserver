@@ -1,4 +1,4 @@
-// src/utils/password.ts
+// shared/core/password.ts
 import * as bcrypt from 'bcrypt'
 
 export async function hashPassword(pwd: string) {
