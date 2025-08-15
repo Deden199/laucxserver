@@ -22,7 +22,7 @@ enum DisbursementStatus {
 }
 
 import { prisma } from '../core/prisma';
-import { logAdminAction } from '../util/adminLog';
+import { logAdminAction } from '../../shared/core/adminLog';
 
 // 1. Create merchant (mdr wajib)
 export const createMerchant = async (req: AuthRequest, res: Response) => {

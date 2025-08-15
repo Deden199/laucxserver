@@ -1,4 +1,4 @@
-import { prisma } from '../core/prisma'
+import { prisma } from '../../src/core/prisma'
 
 export async function logAdminAction(
   adminId: string,
@@ -15,3 +15,4 @@ export async function logAdminAction(
     },
   })
 }
+

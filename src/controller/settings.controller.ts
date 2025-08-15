@@ -4,7 +4,7 @@ import { prisma } from '../core/prisma'
 import { setWeekendOverrideDates } from '../../shared/core/time'
 import { restartSettlementChecker } from '../cron/settlement'
 import { AuthRequest } from '../middleware/auth'
-import { logAdminAction } from '../util/adminLog'
+import { logAdminAction } from '../../shared/core/adminLog'
 
 export async function getSettings(req: Request, res: Response) {
   const rows = await prisma.setting.findMany()

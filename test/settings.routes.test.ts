@@ -4,7 +4,7 @@ import express from 'express'
 import request from 'supertest'
 
 import { prisma } from '../src/core/prisma'
-import * as adminLog from '../src/util/adminLog'
+import * as adminLog from '../shared/core/adminLog'
 
 // Patch restartSettlementChecker before loading controller
 const settlement = require('../src/cron/settlement')

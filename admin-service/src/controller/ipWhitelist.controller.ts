@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../core/prisma';
 import { AuthRequest } from '../middleware/auth';
 import { refreshAdminIpWhitelist } from '../middleware/ipWhitelist';
-import { logAdminAction } from '../util/adminLog';
+import { logAdminAction } from '../../shared/core/adminLog';
 
 export async function getIpWhitelist(_req: AuthRequest, res: Response) {
   const row = await prisma.setting.findUnique({
