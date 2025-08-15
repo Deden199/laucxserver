@@ -1,6 +1,5 @@
 // src/routes/client.ts
 import express, { Router } from 'express'
-import { clientLogin, clientRegister } from '../controller/clientAuth.controller'
 import { requireClientAuth }        from '../middleware/clientAuth'
 import { getClientDashboard }       from '../controller/clientDashboard.controller'
 import {
@@ -11,10 +10,6 @@ import {
 } from '../controller/withdrawals.controller'
 
 const r = Router()
-
-// Public
-r.post('/register', clientRegister)
-r.post('/login',    clientLogin)
 
 // Protect all below
 r.use(requireClientAuth)

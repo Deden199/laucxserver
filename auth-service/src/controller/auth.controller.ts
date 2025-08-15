@@ -1,14 +1,12 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { authenticator } from 'otplib';
 
 import { config } from '../config';
+import { prisma } from '../core/prisma';
 import { createErrorResponse, createSuccessResponse } from '../util/response';
 import { AuthRequest } from '../middleware/auth';
-
-const prisma = new PrismaClient();
 
 // Human login (PartnerUser)
 export const loginUser = async (req: Request, res: Response) => {
