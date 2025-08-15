@@ -12,7 +12,7 @@ import { brevoAxiosInstance } from '../core/brevo.axios';
 import { prisma } from '../core/prisma';
 import logger from '../logger';
 import TokenService from './token';
-import { generateRandomId, getRandomNumber } from '../util/random';
+import { generateRandomId, getRandomNumber } from './shared/core/random';
 import { getCurrentDate } from '../util/util';
 import { sendTelegramMessage } from '../core/telegram.axios';
 import axios from 'axios';

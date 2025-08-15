@@ -9,7 +9,7 @@ import { postWithRetry } from '../utils/postWithRetry';
 import { brevoAxiosInstance } from '../core/brevo.axios';
 import { prisma } from '../core/prisma';
 import logger from '../logger';
-import { generateRandomId, getRandomNumber } from '../util/random';
+import { generateRandomId, getRandomNumber } from '../../../shared/core/random';
 import { getCurrentDate } from '../util/util';
 import { wibTimestampString, wibTimestamp, formatDateJakarta } from '../../../shared/core/time';
 
