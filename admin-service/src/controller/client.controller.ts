@@ -2,10 +2,10 @@
 import { Request, Response } from 'express'
 import crypto from 'crypto'
 import bcrypt from 'bcrypt'
-import { AuthRequest } from '../../middleware/auth'
-import { parseDateSafely } from '../../util/time'
+import { AuthRequest } from '../middleware/auth'
+import { parseDateSafely } from '../util/time'
 import { PrismaClient, DisbursementStatus } from '@prisma/client'
-import { logAdminAction } from '../../util/adminLog'
+import { logAdminAction } from '../util/adminLog'
 
 const prisma = new PrismaClient()
 

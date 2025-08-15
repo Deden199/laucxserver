@@ -1,8 +1,8 @@
 // File: src/controllers/admin/subMerchant.controller.ts
 import { Request, Response } from 'express';
-import { prisma } from '../../core/prisma';
+import { prisma } from '../core/prisma';
 import { z } from 'zod';
-import { parseRawCredential, normalizeCredentials } from '../../util/credentials';
+import { parseRawCredential, normalizeCredentials } from '../util/credentials';
 
 
 const scheduleSchema = z.object({

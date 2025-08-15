@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { config }           from '../../config';
+import { config }           from '../config';
 
 // GET /api/v1/admin/pg-providers
 export const listProviders = (_req: Request, res: Response) => {

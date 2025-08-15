@@ -8,15 +8,6 @@ import { errorHandler } from './middleware/errorHandler'
 import { scheduleSettlementChecker } from './cron/settlement'
 import { scheduleDashboardSummary } from './cron/dashboardSummary'
 
-import subMerchantRoutes from './route/admin/subMerchant.routes';
-import pgProviderRoutes from './route/admin/pgProvider.routes';
-import adminMerchantRoutes from './route/admin/merchant.routes';
-import adminClientRoutes from './route/admin/client.routes';
-import adminClientUserRoutes from './route/admin/clientUser.routes';
-
-import adminTotpRoutes from './route/admin/totp.routes';
-import adminLogRoutes from './route/admin/log.routes';
-import adminIpWhitelistRoutes from './route/admin/ipWhitelist.routes';
 
 import usersRoutes from './route/users.routes';
 
@@ -114,18 +105,9 @@ app.use('/api/v1/payments', apiKeyAuth, paymentRouter);
 app.use('/api/v1', simulateRoutes);
 
 /* ========== 3. PROTECTED – ADMIN PANEL ========== */
-app.use('/api/v1/admin/merchants', authMiddleware, adminMerchantRoutes);
-app.use('/api/v1/admin/merchants/:id/pg', authMiddleware, subMerchantRoutes);
-app.use('/api/v1/admin/pg-providers', authMiddleware, pgProviderRoutes);
-app.use('/api/v1/admin/clients', authMiddleware, adminClientRoutes);
 app.use('/api/v1/admin/users', authMiddleware, usersRoutes);
-app.use('/api/v1/admin/clients/:clientId/users', adminClientUserRoutes);
 
 app.use('/api/v1/admin/settings', authMiddleware, settingsRoutes);
-
-app.use('/api/v1/admin/2fa', adminTotpRoutes);
-app.use('/api/v1/admin/logs', adminLogRoutes);
-app.use('/api/v1/admin/ip-whitelist', adminIpWhitelistRoutes);
 
 /* ========== 4. PARTNER-CLIENT (login/register + dashboard + withdraw) ========== */
 app.use('/api/v1/client', clientWebRoutes);
