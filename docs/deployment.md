@@ -3,7 +3,7 @@
 Dokumen ini menjelaskan contoh struktur Dockerfile serta konfigurasi docker-compose dan Kubernetes untuk setiap service.
 
 ## Dependensi Eksternal
-- **PostgreSQL** sebagai database utama.
+- **MongoDB** sebagai database utama.
 - **Kafka** untuk pub/sub event.
 - Variabel lingkungan umum: `DATABASE_URL` dan `KAFKA_BROKER`.
 
@@ -29,14 +29,10 @@ File berikut menjalankan seluruh service beserta dependensi eksternal.
 ```yaml
 version: "3.8"
 services:
-  db:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: launcx
-      POSTGRES_USER: launcx
-      POSTGRES_PASSWORD: secret
+  mongo:
+    image: mongo:7
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - mongo-data:/data/db
 
   zookeeper:
     image: bitnami/zookeeper:3
@@ -48,6 +44,8 @@ services:
     environment:
       KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
       ALLOW_PLAINTEXT_LISTENER: "yes"
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
     depends_on:
       - zookeeper
     ports:
@@ -59,7 +57,7 @@ services:
     ports:
       - "3001:3000"
     depends_on:
-      - db
+      - mongo
       - kafka
 
   admin:
@@ -68,7 +66,7 @@ services:
     ports:
       - "3002:3000"
     depends_on:
-      - db
+      - mongo
       - kafka
 
   client:
@@ -77,7 +75,7 @@ services:
     ports:
       - "3003:3000"
     depends_on:
-      - db
+      - mongo
       - kafka
 
   merchant:
@@ -86,7 +84,7 @@ services:
     ports:
       - "3004:3000"
     depends_on:
-      - db
+      - mongo
       - kafka
 
   payment:
@@ -95,16 +93,16 @@ services:
     ports:
       - "3005:3000"
     depends_on:
-      - db
+      - mongo
       - kafka
 
 volumes:
-  pgdata:
+  mongo-data:
 ```
 
 Setiap berkas `.env` berisi pengaturan berikut:
 
-- `DATABASE_URL=postgresql://launcx:secret@db:5432/launcx`
+- `DATABASE_URL=mongodb://mongo:27017/launcxdb`
 - `KAFKA_BROKER=kafka:9092`
 - Variabel khusus service sesuai dokumen pada `docs/services/*`.
 

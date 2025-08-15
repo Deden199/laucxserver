@@ -11,6 +11,29 @@ services:
     networks:
       - launcxnet
 
+  zookeeper:
+    image: bitnami/zookeeper:3
+    restart: always
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    networks:
+      - launcxnet
+
+  kafka:
+    image: bitnami/kafka:3
+    restart: always
+    environment:
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    networks:
+      - launcxnet
+
   gateway:
     build:
       context: .
@@ -19,10 +42,12 @@ services:
       - PORT=5000
       - DATABASE_URL=mongodb://mongo:27017/launcxdb
       - JWT_SECRET=supersecret
+      - KAFKA_BROKER=kafka:9092
     ports:
       - "5000:5000"
     depends_on:
       - mongo
+      - kafka
     networks:
       - launcxnet
 
@@ -34,10 +59,12 @@ services:
       - PORT=5001
       - DATABASE_URL=mongodb://mongo:27017/launcxdb
       - JWT_SECRET=supersecret
+      - KAFKA_BROKER=kafka:9092
     ports:
       - "5001:5001"
     depends_on:
       - mongo
+      - kafka
     networks:
       - launcxnet
 
@@ -49,10 +76,12 @@ services:
       - PORT=5002
       - DATABASE_URL=mongodb://mongo:27017/launcxdb
       - JWT_SECRET=supersecret
+      - KAFKA_BROKER=kafka:9092
     ports:
       - "5002:5002"
     depends_on:
       - mongo
+      - kafka
     networks:
       - launcxnet
 
@@ -64,10 +93,12 @@ services:
       - PORT=5100
       - DATABASE_URL=mongodb://mongo:27017/launcxdb
       - JWT_SECRET=supersecret
+      - KAFKA_BROKER=kafka:9092
     ports:
       - "5100:5100"
     depends_on:
       - mongo
+      - kafka
     networks:
       - launcxnet
 
@@ -79,6 +110,7 @@ services:
       - PORT=5200
       - DATABASE_URL=mongodb://mongo:27017/launcxdb
       - JWT_SECRET=supersecret
+      - KAFKA_BROKER=kafka:9092
       - HILOGATE_MERCHANT_ID=
       - HILOGATE_SECRET_KEY=
       - HILOGATE_ENV=sandbox
@@ -90,6 +122,7 @@ services:
       - "5200:5200"
     depends_on:
       - mongo
+      - kafka
     networks:
       - launcxnet
 
