@@ -3,7 +3,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../core/prisma';
 import { HilogateClient, HilogateConfig } from '../shared/hilogateClient';
-import { isJakartaWeekend } from '../util/time'
+import { isJakartaWeekend } from '../../shared/core/time'
 
 export async function getBanks(req: Request, res: Response) {
   try {

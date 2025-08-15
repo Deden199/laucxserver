@@ -11,7 +11,7 @@ import { prisma } from '../core/prisma';
 import logger from '../logger';
 import { generateRandomId, getRandomNumber } from '../util/random';
 import { getCurrentDate } from '../util/util';
-import { wibTimestampString, wibTimestamp, formatDateJakarta } from '../util/time';
+import { wibTimestampString, wibTimestamp, formatDateJakarta } from '../../../shared/core/time';
 
 import { sendTelegramMessage } from '../core/telegram.axios';
 import axios from 'axios';

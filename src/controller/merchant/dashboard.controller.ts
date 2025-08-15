@@ -3,7 +3,7 @@ import { Response } from 'express'
 import { PrismaClient } from '@prisma/client'
 import ExcelJS from 'exceljs'
 import { AuthRequest } from '../../middleware/auth'
-import { parseDateSafely } from '../../util/time'
+import { parseDateSafely } from '../../../shared/core/time'
 
 const prisma = new PrismaClient()
 

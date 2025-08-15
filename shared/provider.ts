@@ -6,7 +6,7 @@ import { prisma } from '../src/core/prisma';
 import { HilogateClient, HilogateConfig } from './hilogateClient';
 import { OyClient, OyConfig } from './oyClient';
 import { GidiConfig } from './gidi.service';
-import { isJakartaWeekend } from '../src/util/time';
+import { isJakartaWeekend } from './core/time';
 
 /* ═════════════════════════ Helpers ═════════════════════════ */
 interface RawSub {

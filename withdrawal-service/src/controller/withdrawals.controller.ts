@@ -9,7 +9,7 @@ import logger from '../logger'
 import { getActiveProviders } from '../../shared/provider';
 import { OyClient, OyConfig } from '../../shared/oyClient'
 import { authenticator } from 'otplib'
-import { parseDateSafely } from '../util/time'
+import { parseDateSafely } from '../../../shared/core/time'
 
 
 enum DisbursementStatus {

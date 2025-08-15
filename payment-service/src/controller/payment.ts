@@ -18,7 +18,7 @@ import Decimal from 'decimal.js'
 import moment                    from 'moment-timezone'
 import { postWithRetry }                from '../utils/postWithRetry'
 
-import { isJakartaWeekend, wibTimestamp, wibTimestampString } from '../util/time'
+import { isJakartaWeekend, wibTimestamp, wibTimestampString } from '../../../shared/core/time'
 import { verifyQrisMpmCallbackSignature } from '../service/gidiQrisIntegration'
 
 
