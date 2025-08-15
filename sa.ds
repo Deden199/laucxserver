@@ -13,7 +13,7 @@ import { prisma } from '../core/prisma';
 import logger from '../logger';
 import TokenService from './token';
 import { generateRandomId, getRandomNumber } from './shared/core/random';
-import { getCurrentDate } from '../util/util';
+import { getCurrentDate } from './shared/core/util';
 import { sendTelegramMessage } from '../core/telegram.axios';
 import axios from 'axios';
 import crypto from 'crypto';

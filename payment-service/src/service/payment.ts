@@ -10,7 +10,7 @@ import { brevoAxiosInstance } from '../core/brevo.axios';
 import { prisma } from '../core/prisma';
 import logger from '../logger';
 import { generateRandomId, getRandomNumber } from '../../../shared/core/random';
-import { getCurrentDate } from '../util/util';
+import { getCurrentDate } from '../../../shared/core/util';
 import { wibTimestampString, wibTimestamp, formatDateJakarta } from '../../../shared/core/time';
 
 import { sendTelegramMessage } from '../core/telegram.axios';

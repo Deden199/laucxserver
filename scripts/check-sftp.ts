@@ -1,6 +1,6 @@
 import Client from 'ssh2-sftp-client';
 import { config } from '../src/config';
-import { getTodayDateInJakartaFormat, getNestedValue} from '../src/util/util'
+import { getTodayDateInJakartaFormat, getNestedValue } from '../shared/core/util';
 import { sendTelegramMessage } from '../src/core/telegram.axios';
 
 const sftp = new Client();
