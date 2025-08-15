@@ -23,7 +23,6 @@ import usersRoutes from './route/users.routes';
 import settingsRoutes   from './route/settings.routes';
 import { loadWeekendOverrideDates } from './util/time'
 
-import { withdrawalCallback } from './controller/withdrawals.controller'
 import webRoutes from './route/web.routes';
 import simulateRoutes from './route/simulate.routes';
 
@@ -38,7 +37,6 @@ import { oyTransactionCallback, gidiTransactionCallback } from './controller/pay
 
 import merchantDashRoutes from './route/merchant/dashboard.routes';
 import clientWebRoutes from './route/client/web.routes';    // partner-client routes
-import withdrawalRoutes from './route/withdrawals.routes';  // add withdrawal routes
 
 import apiKeyAuth from './middleware/apiKeyAuth';
 import { authMiddleware } from './middleware/auth';
@@ -75,17 +73,6 @@ app.post(
   transactionCallback
 );
 app.post(
-  '/api/v1/withdrawals/callback',
-  express.raw({
-    type : '*/*',              // terima JSON / octet-stream apa saja
-    limit: '2mb',              // payload WD aman
-    verify: (req, _res, buf) => {
-      (req as any).rawBody = buf.toString('utf8');      // simpan mentah
-    },
-  }),
-  withdrawalCallback           // ⛔ TANPA express.json()
-);
-app.post(
   '/api/v1/transaction/callback/gidi',
   express.raw({
     limit: '20kb',
@@ -116,7 +103,6 @@ app.use(requestLogger);
 
 // JSON body parser
 app.use(express.json({ limit: '20kb' }));
-app.use('/api/v1/withdrawals', withdrawalRoutes,)
 app.use('/api/v1', bankRoutes)
 
 /* ========== 1. PUBLIC ROUTES ========== */

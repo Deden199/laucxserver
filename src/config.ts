@@ -24,6 +24,8 @@ export const config = {
     callbackFinishUrl:
       process.env.CALLBACK_URL_FINISH ||
       `${process.env.BASE_URL || `http://localhost:${PORT}`}/?status=success`,
+    withdrawalServiceUrl:
+      process.env.WITHDRAWAL_SERVICE_URL || 'http://localhost:5200',
     // Netzme configuration
         // HTTP retry configuration
     httpRetry: {
