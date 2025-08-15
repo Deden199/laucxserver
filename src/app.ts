@@ -2,136 +2,34 @@ import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
-import cron from 'node-cron';
-import { errorHandler } from './middleware/errorHandler'
 
-import { scheduleSettlementChecker } from './cron/settlement'
-import { scheduleDashboardSummary } from './cron/dashboardSummary'
-
-
-import usersRoutes from './route/users.routes';
-
-import settingsRoutes   from './route/settings.routes';
-import { loadWeekendOverrideDates } from './util/time'
-
-import webRoutes from './route/web.routes';
-import simulateRoutes from './route/simulate.routes';
-
-import ewalletRoutes from './route/ewallet.routes';
-import paymentRouter from './route/payment.routes';
-import bankRoutes from './route/bank.routes'
-import { proxyOyQris } from './controller/qr.controller'
-
-// import disbursementRouter from './route/disbursement.routes';
-import paymentController, { transactionCallback } from './controller/payment';
-import { oyTransactionCallback, gidiTransactionCallback } from './controller/payment'
-
-import merchantDashRoutes from './route/merchant/dashboard.routes';
-import clientWebRoutes from './route/client/web.routes';    // partner-client routes
-
-import apiKeyAuth from './middleware/apiKeyAuth';
-import { authMiddleware } from './middleware/auth';
-
+import routes from './route/routes';
 import { config } from './config';
 import logger from './logger';
-import requestLogger from './middleware/log';
 
 const app = express();
-loadWeekendOverrideDates().catch(err =>
-  console.error('[init]', err)
-)
-app.disable('etag');
-app.use(express.json({
-  verify: (req, _res, buf) => { (req as any).rawBody = buf }
-}))
-// No-cache headers
-app.use((_, res, next) => {
-  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.set('Pragma', 'no-cache');
-  res.set('Expires', '0');
-  next();
-});
 
-// Raw parser for Hilogate transaction webhook
-app.post(
-  '/api/v1/transactions/callback',
-  express.raw({
-    limit: '20kb',
-    type: () => true,
-    verify: (req, _res, buf: Buffer) => { (req as any).rawBody = buf; }
-  }),
-  express.json(),
-  transactionCallback
-);
-app.post(
-  '/api/v1/transaction/callback/gidi',
-  express.raw({
-    limit: '20kb',
-    type: () => true,
-    verify: (req, _res, buf: Buffer) => { (req as any).rawBody = buf }
-  }),
-  express.json(),
-  gidiTransactionCallback
-);
-app.post(
-  '/api/v1/transaction/callback/oy',
-  oyTransactionCallback
-)
-// Raw parser for Hilogate withdrawal webhook
-app.get('/api/v1/qris/:orderId', proxyOyQris)
-
-
-// Global middleware
-app.set('trust proxy', 1);
+// Basic security and rate limiting
+app.use(cors({ origin: true, credentials: true }));
 app.use(helmet());
-app.use(rateLimit({ windowMs: 60_000, max: 100, message: 'Too many requests, try again later.' }));
-
-app.use(cors({
-  origin: true,         // terima semua Origin yang dikirim client
-  credentials: true,    // tetap ijinkan cookie / header Authorization
-}));
-app.use(requestLogger);
-
-// JSON body parser
+app.use(rateLimit({ windowMs: 60_000, max: 100 }));
 app.use(express.json({ limit: '20kb' }));
-app.use('/api/v1', bankRoutes)
 
-/* ========== 1. PUBLIC ROUTES ========== */
-app.use('/api/v1', ewalletRoutes);         // public e-wallet endpoints
+// Register gateway routes
+app.use('/', routes);
 
-/* ========== 2. PROTECTED – API-KEY (SERVER-TO-SERVER) ========== */
-app.use('/api/v1/payments', apiKeyAuth, paymentRouter);
-// app.use('/api/v1/disbursements', apiKeyAuth, disbursementRouter);
-app.use('/api/v1', simulateRoutes);
-
-/* ========== 3. PROTECTED – ADMIN PANEL ========== */
-app.use('/api/v1/admin/users', authMiddleware, usersRoutes);
-
-app.use('/api/v1/admin/settings', authMiddleware, settingsRoutes);
-
-/* ========== 4. PARTNER-CLIENT (login/register + dashboard + withdraw) ========== */
-app.use('/api/v1/client', clientWebRoutes);
-
-
-/* ========== 5. PROTECTED – MERCHANT DASHBOARD ========== */
-app.use('/api/v1/merchant/dashboard', authMiddleware, merchantDashRoutes);
-app.use('/web', webRoutes);
-
-// Global error handler
+// Basic error handler to avoid leaking server errors
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   logger.error(err);
-  res.status(err.status || 500).json({ error: err.message || 'Internal Server Error' });
+  res.status(500).json({ error: 'Internal Server Error' });
 });
 
-/* ========== 6. SCHEDULED TASKS ========== */
-scheduleSettlementChecker().catch(err => logger.error('[SettlementCron] init failed', err))
-scheduleDashboardSummary()
-
-// Start server
-app.use(errorHandler)
-
-app.listen(config.api.port, () => {
-
-});
+// Start server when executed directly
+if (require.main === module) {
+  app.listen(config.api.port, () => {
+    logger.info(`API Gateway running on port ${config.api.port}`);
+  });
+}
 
 export default app;
+
