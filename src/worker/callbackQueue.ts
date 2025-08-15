@@ -1,5 +1,5 @@
 import { prisma } from '../core/prisma'
-import { postWithRetry } from '../utils/postWithRetry'
+import { postWithRetry } from '../util/postWithRetry'
 import logger from '../logger'
 import { config } from '../config'
 
