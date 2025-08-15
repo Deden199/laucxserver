@@ -6,7 +6,7 @@ import logger                           from '../logger'
 import { ApiKeyRequest } from '../middleware/apiKeyAuth'
 import { getActiveProviders } from '../../../shared/provider'
 import { createErrorResponse,
-         createSuccessResponse }        from '../util/response'
+         createSuccessResponse }        from '../../../shared/core/response'
 import paymentService, {
   Transaction,
   OrderRequest,
