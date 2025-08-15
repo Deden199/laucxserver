@@ -1,6 +1,5 @@
 // src/route/web.routes.ts
 import { Router, Request, Response } from 'express'
-import * as paymentService from '../service/payment'
 import { PrismaClient } from '@prisma/client'
 const prisma = new PrismaClient()
 
@@ -16,13 +15,6 @@ router.get('/create-order', async (req: Request, res: Response) => {
 
     const client = await prisma.partnerClient.findUnique({ where: { apiKey } })
     if (!client || !client.isActive) return res.status(401).send('Invalid apiKey')
-
-    // const { orderId } = await paymentService.createOrder({
-    //   userId: client.id,
-    //   amount,
-    // })
-
-    
 
     const checkoutHosts = [
       'https://checkout1.launcx.com',

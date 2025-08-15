@@ -17,11 +17,10 @@ import { sendTelegramMessage } from '../core/telegram.axios';
 import axios from 'axios';
 import crypto from 'crypto';
 import { config } from '../config';
-import { getActiveProvidersForClient, Provider } from './provider';
-import { HilogateClient, HilogateConfig } from '../service/hilogateClient';
-import { OyClient, OyConfig } from './oyClient';
-import { getActiveProviders } from './provider';
-import { generateDynamicQrisFinal, GidiConfig, GidiQrisResult } from './gidi.service';
+import { getActiveProvidersForClient, Provider, getActiveProviders } from '../../../shared/provider';
+import { HilogateClient, HilogateConfig } from '../../../shared/hilogateClient';
+import { OyClient, OyConfig } from '../../../shared/oyClient';
+import { generateDynamicQrisFinal, GidiConfig, GidiQrisResult } from '../../../shared/gidi.service';
 import { scheduleHilogateFallback } from './hilogateFallback';
 
 // ─── Internal checkout page hosts ──────────────────────────────────

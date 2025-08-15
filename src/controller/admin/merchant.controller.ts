@@ -1,13 +1,12 @@
 import { Request, Response } from 'express';
-import { DisbursementStatus } from '@prisma/client';
 import { AuthRequest } from '../../middleware/auth';
 import { authenticator } from 'otplib';
 import { v4 as uuid } from 'uuid';
 import crypto from 'crypto'
 import axios from 'axios'
-import {HilogateClient ,HilogateConfig} from '../../service/hilogateClient'
+import { HilogateClient, HilogateConfig } from '../../../shared/hilogateClient'
 import ExcelJS from 'exceljs'
-import {OyClient,OyConfig}          from '../../service/oyClient'    // sesuaikan path
+import { OyClient, OyConfig } from '../../../shared/oyClient'
 import { config } from '../../config';
 import { isJakartaWeekend, formatDateJakarta, parseDateSafely } from '../../util/time'
 import { parseRawCredential, normalizeCredentials } from '../../util/credentials';
@@ -16,6 +15,11 @@ import pLimit from 'p-limit'
 
 const BALANCE_TTL_MS = 30_000
 
+enum DisbursementStatus {
+  PENDING = 'PENDING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED'
+}
 
 import { prisma } from '../../core/prisma';
 import { logAdminAction } from '../../util/adminLog';

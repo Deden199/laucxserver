@@ -1,6 +1,6 @@
-// File: src/service/oyClient.ts
+// File: shared/oyClient.ts
 import axios, { AxiosInstance } from 'axios';
-import logger from '../logger';
+import logger from '../src/logger';
 
 export interface OyConfig {
   baseUrl: string;

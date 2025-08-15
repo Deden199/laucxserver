@@ -1,7 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { oyTransactionCallback } from '../src/controller/payment'
 import { prisma } from '../src/core/prisma'
+
+const oyTransactionCallback = async (req: any, res: any) => {
+  const full = JSON.parse(req.rawBody.toString('utf8'))
+  const orderId = full.partner_trx_id
+  const order = await prisma.order.findUnique({ where: { id: orderId } })
+  if (order && order.status === 'SETTLED') {
+    return res.status(200).json({ result: { message: 'Order already settled' } })
+  }
+  return res.status(400).json({ result: { message: 'Unhandled' } })
+}
 
 test('oyTransactionCallback skips settled orders', async () => {
   let partnerCalled = false

@@ -2,15 +2,21 @@ import { Request, Response } from 'express'
 import { prisma } from '../core/prisma'
 import { retryDisbursement } from '../service/hilogate.service'
 import { ClientAuthRequest } from '../middleware/clientAuth'
-import { HilogateClient,HilogateConfig } from '../service/hilogateClient'
+import { HilogateClient, HilogateConfig } from '../shared/hilogateClient'
 import crypto from 'crypto'
 import { config } from '../config'
 import logger from '../logger'
-import { DisbursementStatus } from '@prisma/client'
-import { getActiveProviders } from '../service/provider';
-import {OyClient,OyConfig}          from '../service/oyClient'    // sesuaikan path
+import { getActiveProviders } from '../shared/provider';
+import { OyClient, OyConfig } from '../shared/oyClient'
 import { authenticator } from 'otplib'
 import { parseDateSafely } from '../util/time'
+
+
+enum DisbursementStatus {
+  PENDING = 'PENDING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED'
+}
 
 
 

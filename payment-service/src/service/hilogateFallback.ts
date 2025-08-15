@@ -1,6 +1,6 @@
 import { prisma } from '../core/prisma';
 import logger from '../logger';
-import { HilogateClient, HilogateConfig } from './hilogateClient';
+import { HilogateClient, HilogateConfig } from '../../../shared/hilogateClient';
 import { processHilogatePayload } from './payment';
 import moment from 'moment-timezone';
 

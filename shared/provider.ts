@@ -1,12 +1,12 @@
 /* ───────────────────────── src/service/provider.ts ───────────────────────── */
 import axios from 'axios';
 import * as jwt from 'jsonwebtoken';
-import { config } from '../config';
-import { prisma } from '../core/prisma';
-import { HilogateClient, HilogateConfig } from '../service/hilogateClient';
-import { OyClient, OyConfig } from '../service/oyClient';
-import { GidiConfig } from '../service/gidi.service';
-import { isJakartaWeekend } from '../util/time';
+import { config } from '../src/config';
+import { prisma } from '../src/core/prisma';
+import { HilogateClient, HilogateConfig } from './hilogateClient';
+import { OyClient, OyConfig } from './oyClient';
+import { GidiConfig } from './gidi.service';
+import { isJakartaWeekend } from '../src/util/time';
 
 /* ═════════════════════════ Helpers ═════════════════════════ */
 interface RawSub {
