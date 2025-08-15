@@ -2,7 +2,7 @@ import { Request, Response } from 'express'
 import bcrypt from 'bcrypt'
 import { prisma } from '../core/prisma'
 import { AuthRequest } from '../middleware/auth'
-import { logAdminAction } from '../util/adminLog'
+import { logAdminAction } from '../../shared/core/adminLog'
 
 // List all ClientUser of a PartnerClient
 export const listClientUsers = async (req: Request, res: Response) => {

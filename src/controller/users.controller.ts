@@ -3,7 +3,7 @@ import { Response } from 'express'
 import { prisma } from '../core/prisma'
 import { hashPassword } from '../../shared/core/password'
 import { AuthRequest } from '../middleware/auth'
-import { logAdminAction } from '../util/adminLog'
+import { logAdminAction } from '../../shared/core/adminLog'
 
 
 export async function listUsers(req: AuthRequest, res: Response) {

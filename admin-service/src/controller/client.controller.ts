@@ -5,7 +5,7 @@ import bcrypt from 'bcrypt'
 import { AuthRequest } from '../middleware/auth'
 import { parseDateSafely } from '../../../shared/core/time'
 import { PrismaClient, DisbursementStatus } from '@prisma/client'
-import { logAdminAction } from '../util/adminLog'
+import { logAdminAction } from '../../shared/core/adminLog'
 
 const prisma = new PrismaClient()
 
