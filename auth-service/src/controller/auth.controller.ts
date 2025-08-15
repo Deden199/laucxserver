@@ -5,7 +5,7 @@ import { authenticator } from 'otplib';
 
 import { config } from '../config';
 import { prisma } from '../core/prisma';
-import { createErrorResponse, createSuccessResponse } from '../util/response';
+import { createErrorResponse, createSuccessResponse } from '../../../shared/core/response';
 import { AuthRequest } from '../middleware/auth';
 
 // Human login (PartnerUser)

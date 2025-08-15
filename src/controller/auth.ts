@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { createErrorResponse, createSuccessResponse } from '../util/response';
+import { createErrorResponse, createSuccessResponse } from '../../shared/core/response';
 import { generateToken } from '../service/auth';
 
 const generateAccessToken = async (req: Request, res: Response) => {
