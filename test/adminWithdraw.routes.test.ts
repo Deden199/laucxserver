@@ -8,7 +8,7 @@ process.env.JWT_SECRET = 'test'
 
 import { prisma } from '../src/core/prisma'
 import * as adminLog from '../src/util/adminLog'
-import * as oyModule from '../src/service/oyClient'
+import * as oyModule from '../shared/oyClient'
 const { adminWithdraw, getDashboardWithdrawals } = require('../src/controller/admin/merchant.controller')
 
 const secret = authenticator.generateSecret()

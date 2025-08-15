@@ -19,7 +19,7 @@ const genSpec = (title: string, apis: string[], out: string) => {
   return spec
 }
 
-const paymentSpec = genSpec('Payment API', ['src/route/payment.routes.ts'], 'payment.yaml')
+const paymentSpec = genSpec('Payment API', ['payment-service/src/route/payment.routes.ts'], 'payment.yaml')
 const withdrawalSpec = genSpec('Withdrawal API', ['src/route/withdrawals.routes.ts'], 'withdrawal.yaml')
 
 app.use('/docs/payment', swaggerUi.serveFiles(paymentSpec), swaggerUi.setup(paymentSpec))

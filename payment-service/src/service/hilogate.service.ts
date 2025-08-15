@@ -1,6 +1,6 @@
 import { prisma } from '../core/prisma';
-import { HilogateClient, HilogateConfig } from '../shared/hilogateClient';
-import { getActiveProviders } from '../shared/provider';  // fungsi fetch sub_merchant
+import { HilogateClient, HilogateConfig } from '../../../shared/hilogateClient';
+import { getActiveProviders } from '../../../shared/provider';  // fungsi fetch sub_merchant
 import logger from '../logger';
 
 export async function syncWithHilogate(refId: string, subMerchantId: string) {

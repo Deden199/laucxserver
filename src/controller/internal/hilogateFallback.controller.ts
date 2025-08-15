@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../core/prisma';
-import { HilogateClient, HilogateConfig } from '../../service/hilogateClient';
+import { HilogateClient, HilogateConfig } from '../../../shared/hilogateClient';
 import logger from '../../logger';
 
 export async function manualResendCallback(req: Request, res: Response) {

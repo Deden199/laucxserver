@@ -4,7 +4,7 @@ import { Request, Response }            from 'express'
 import { config }                       from '../config'
 import logger                           from '../logger'
 import { ApiKeyRequest } from '../middleware/apiKeyAuth'
-import { getActiveProviders } from '../service/provider'
+import { getActiveProviders } from '../../../shared/provider'
 import { createErrorResponse,
          createSuccessResponse }        from '../util/response'
 import paymentService, {
