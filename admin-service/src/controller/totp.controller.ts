@@ -1,7 +1,7 @@
 import { Response } from 'express'
 import { authenticator } from 'otplib'
-import { prisma } from '../../core/prisma'
-import { AuthRequest } from '../../middleware/auth'
+import { prisma } from '../core/prisma'
+import { AuthRequest } from '../middleware/auth'
 
 const ISSUER = 'Launcx'
 
