@@ -37,7 +37,7 @@ docker-compose up
 Each service reads configuration from a `.env` file in its directory. Copy the corresponding `.env.example` to `.env` and supply the required values. At minimum, set the shared variables:
 
 ```
-DATABASE_URL=postgresql://launcx:secret@db:5432/launcx
+DATABASE_URL=mongodb://mongo:27017/launcxdb
 KAFKA_BROKER=kafka:9092
 ```
 
