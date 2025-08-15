@@ -4,7 +4,7 @@
  */
 
 import moment from 'moment-timezone'
-import { prisma } from '../core/prisma'
+import type { PrismaClient } from '@prisma/client'
 
 export function wibTimestamp(): Date {
   return moment().tz('Asia/Jakarta').toDate();
@@ -15,10 +15,9 @@ export function wibTimestampString(): string {
   return moment().tz('Asia/Jakarta').format('YYYY-MM-DDTHH:mm:ss+07:00');
 }
 
-
 let weekendOverrideDates = new Set<string>()
 
-export async function loadWeekendOverrideDates(): Promise<void> {
+export async function loadWeekendOverrideDates(prisma: PrismaClient): Promise<void> {
   const env = process.env.WEEKEND_OVERRIDE_DATES
   if (env) {
     weekendOverrideDates = new Set(
@@ -38,6 +37,7 @@ export async function loadWeekendOverrideDates(): Promise<void> {
     console.error('[loadWeekendOverrideDates]', err)
   }
 }
+
 export function formatDateJakarta(date: Date): string {
   return moment(date).tz('Asia/Jakarta').format('YYYY-MM-DD HH:mm:ss')
 }
@@ -78,7 +78,7 @@ export function parseDateSafely(raw: any): Date | undefined {
         )
       )
     }
-        // Common provider formats
+    // Common provider formats
     const formats = [
       'YYYY-MM-DD HH:mm:ss',
       'YYYY-MM-DDTHH:mm:ssZ',
@@ -89,8 +89,7 @@ export function parseDateSafely(raw: any): Date | undefined {
       if (mo.isValid()) return mo.toDate()
     }
   }
-  
+
   const d = new Date(raw)
   return isNaN(d.getTime()) ? undefined : d
-
-  }
+}

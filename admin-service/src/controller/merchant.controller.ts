@@ -8,7 +8,7 @@ import { HilogateClient, HilogateConfig } from '../../shared/hilogateClient'
 import ExcelJS from 'exceljs'
 import { OyClient, OyConfig } from '../../shared/oyClient'
 import { config } from '../config';
-import { isJakartaWeekend, formatDateJakarta, parseDateSafely } from '../util/time'
+import { isJakartaWeekend, formatDateJakarta, parseDateSafely } from '../../../shared/core/time'
 import { parseRawCredential, normalizeCredentials } from '../util/credentials';
 import { getCache, setCache } from '../util/cache'
 import pLimit from 'p-limit'

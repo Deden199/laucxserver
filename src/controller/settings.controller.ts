@@ -1,7 +1,7 @@
 import { Request, Response } from 'express'
 import cron from 'node-cron'
 import { prisma } from '../core/prisma'
-import { setWeekendOverrideDates } from '../util/time'
+import { setWeekendOverrideDates } from '../../shared/core/time'
 import { restartSettlementChecker } from '../cron/settlement'
 import { AuthRequest } from '../middleware/auth'
 import { logAdminAction } from '../util/adminLog'
