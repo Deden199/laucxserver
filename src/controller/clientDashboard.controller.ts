@@ -10,8 +10,8 @@ import axios from 'axios';
 import { formatDateJakarta } from '../../shared/core/time';
 import pLimit from 'p-limit' // optional kalau mau throttle paralel, tapi tidak diperlukan
 
-import { retry } from '../utils/retry';
-import { CALLBACK_ALLOWED_STATUSES, isCallbackStatusAllowed } from '../utils/callbackStatus';
+import { retry } from '../../shared/core/retry';
+import { CALLBACK_ALLOWED_STATUSES, isCallbackStatusAllowed } from '../util/callbackStatus';
 
 const DASHBOARD_STATUSES = [
   'SUCCESS',
