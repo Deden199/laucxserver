@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import axios, { AxiosResponse } from 'axios';
+import clientWebRoutes from './client/web.routes';
 
 const router = Router();
 
@@ -42,6 +43,7 @@ const services = {
 
 // Auth related services
 router.use('/auth', createProxy(services.auth));
+router.use('/client', clientWebRoutes);
 router.use('/client', createProxy(services.auth));
 
 // Payment service
