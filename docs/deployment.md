@@ -105,6 +105,7 @@ Setiap berkas `.env` berisi pengaturan berikut:
 - `DATABASE_URL=mongodb://mongo:27017/launcxdb`
 - `KAFKA_BROKER=kafka:9092`
 - Variabel khusus service sesuai dokumen pada `docs/services/*`.
+- `NEXT_PUBLIC_API_URL=http://localhost:5000` untuk membuat frontend terhubung ke gateway.
 
 ## Manifest Kubernetes
 Gunakan satu `Deployment` dan `Service` per service. Setelan `replicas` menentukan skala, sedangkan strategi `RollingUpdate` memungkinkan rolling update tanpa downtime.
