@@ -81,7 +81,7 @@ export default function TransactionsTable({
         <button
           onClick={() => {
             api
-              .get('/admin/merchants/dashboard/export-all', {
+              .get('/admin/dashboard/export-all', {
                 params: buildParams(),
                 responseType: 'blob'
               })
