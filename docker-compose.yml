@@ -43,6 +43,10 @@ services:
       - DATABASE_URL=mongodb://mongo:27017/launcxdb
       - JWT_SECRET=supersecret
       - KAFKA_BROKER=kafka:9092
+      - AUTH_SERVICE_URL=http://auth-service:5002
+      - ADMIN_SERVICE_URL=http://admin-service:5001
+      - PAYMENT_SERVICE_URL=http://payment-service:5100
+      - WITHDRAWAL_SERVICE_URL=http://withdrawal-service:5200
     ports:
       - "5000:5000"
     depends_on:
