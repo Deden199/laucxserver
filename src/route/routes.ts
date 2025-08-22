@@ -35,9 +35,9 @@ function createProxy(target: string, options: ProxyOptions = {}) {
 }
 
 const services = {
-  auth: process.env.AUTH_SERVICE_URL || 'http://localhost:5001',
-  admin: process.env.ADMIN_SERVICE_URL || 'http://localhost:5002',
-  payment: process.env.PAYMENT_SERVICE_URL || 'http://localhost:5003',
+  auth: process.env.AUTH_SERVICE_URL || 'http://localhost:5002',
+  admin: process.env.ADMIN_SERVICE_URL || 'http://localhost:5001',
+  payment: process.env.PAYMENT_SERVICE_URL || 'http://localhost:5100',
   withdrawal: process.env.WITHDRAWAL_SERVICE_URL || 'http://localhost:5200',
 };
 
