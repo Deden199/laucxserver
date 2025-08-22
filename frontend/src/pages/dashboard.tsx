@@ -261,7 +261,7 @@ const fetchSummary = async () => {
       totalPaid?: number
       totalSettlement?: number
       totalSuccessfulWithdraw?: number
-    }>('/admin/merchants/dashboard/summary', { params })
+    }>('/admin/dashboard/summary', { params })
 
     if (data.totalClientBalance !== undefined)
       setTotalClientBalance(data.totalClientBalance)
@@ -316,7 +316,7 @@ const fetchBalances = async () => {
     try {
       const params = buildParams()
       const { data } = await api.get<{ data: { subMerchantId: string; name?: string | null; profit: number }[] }>(
-        '/admin/merchants/dashboard/profit-submerchant',
+        '/admin/dashboard/profit-submerchant',
         { params }
       )
       setProfitSubs(data.data)
@@ -332,7 +332,7 @@ const fetchBalances = async () => {
     try {
       const params = buildParams()
       const { data } = await api.get<{ totalProfit: number }>(
-        '/admin/merchants/dashboard/profit',
+        '/admin/dashboard/profit',
         { params }
       )
       setTotalProfit(data.totalProfit)
@@ -350,7 +350,7 @@ async function fetchWithdrawals() {
     const status = mapWithdrawStatus(withdrawStatusFilter)
     if (status) params.status = status
     const { data } = await api.get<{ data: Withdrawal[] }>(
-      '/admin/merchants/dashboard/withdrawals',
+      '/admin/dashboard/withdrawals',
       { params }
     )
     setWithdrawals(data.data)
@@ -370,7 +370,7 @@ async function fetchAdminWithdrawals() {
     const status = mapWithdrawStatus(withdrawStatusFilter)
     if (status) params.status = status
     const { data } = await api.get<{ data: AdminWithdrawal[] }>(
-      '/admin/merchants/dashboard/admin-withdrawals',
+      '/admin/dashboard/admin-withdrawals',
       { params }
     )
     setAdminWithdrawals(data.data)
@@ -386,7 +386,7 @@ async function handleAdminWithdraw(e: React.FormEvent) {
   if (!isValid || error) return
   setBusy(b => ({ ...b, submitting: true }))
   try {
-    await api.post('/admin/merchants/dashboard/withdraw', {
+    await api.post('/admin/dashboard/withdraw', {
       subMerchantId: selectedSub,
       amount: Number(wdAmount),
       bank_code: wdBank,
@@ -413,7 +413,7 @@ async function validateBankAccount() {
   setError('')
   try {
     const res = await api.post(
-      '/admin/merchants/dashboard/validate-account',
+      '/admin/dashboard/validate-account',
       {
         subMerchantId: selectedSub,
         bank_code: wdBank,
@@ -443,7 +443,7 @@ async function validateBankAccount() {
     try {
       const params = buildParams()
       const { data } = await api.get<TransactionsResponse>(
-        '/admin/merchants/dashboard/transactions',
+        '/admin/dashboard/transactions',
         { params }
       )
 

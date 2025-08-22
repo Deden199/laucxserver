@@ -29,7 +29,7 @@ export default function WithdrawalHistory(_: any) {
         if (endDate) params.toDate = endDate.toISOString()
 
         const { data } = await api.get<{ data: Withdrawal[]; total: number }>(
-          '/admin/merchants/dashboard/withdrawals',
+          '/admin/dashboard/withdrawals',
           { params }
         )
         setWithdrawals(data.data)
